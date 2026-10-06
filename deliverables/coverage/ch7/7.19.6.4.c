@@ -1,0 +1,220 @@
+/*
+ * 测试条款：C99 7.19.6.4  The scanf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int scanf(const char * restrict format, ...);
+ *   [2] scanf 等价于在参数前插入 stdin 调用 fscanf。
+ *   [3] 返回值：输入失败且尚未转换时返回 EOF；否则返回成功赋值的输入项数，
+ *       可能少于提供的项数，甚至为 0（早期匹配失败）。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：scanf 的返回类型为 int，第一个参数为 const char * restrict，
+ *     且为可变参数函数。通过取函数指针类型来静态验证原型。 */
+static int (*scanf_proto_check)(const char * restrict, ...) = scanf;
+
+/* 辅助：把字符串写入临时文件，然后重定向 stdin 读取它。
+ * 由于标准 C 无法直接给 stdin 喂字符串，这里用 freopen 重定向。 */
+static FILE *redirect_stdin_from_string(const char *text, const char *fname)
+{
+    FILE *fp = fopen(fname, "w");
+    if (fp == NULL) return NULL;
+    fputs(text, fp);
+    fclose(fp);
+    return freopen(fname, "r", stdin);
+}
+
+int main(void)
+{
+    /* [1] 原型可用性：能取地址、能调用，说明声明存在且类型正确。 */
+    assert(scanf_proto_check == scanf);
+
+    /* [2] scanf 等价于 fscanf(stdin, ...)：
+     *     用同一输入分别通过 scanf 与 fscanf(stdin,...) 读取，
+     *     结果应完全一致。 */
+
+    /* --- 用 scanf 读取一个整数 --- */
+    {
+        FILE *fp = redirect_stdin_from_string("12345", "t_scanf_1.txt");
+        assert(fp != NULL);
+        int v = 0;
+        int r = scanf("%d", &v);
+        assert(r == 1);          /* [3] 成功赋值 1 项 */
+        assert(v == 12345);
+    }
+
+    /* --- 用 fscanf(stdin, ...) 读取同样内容，验证等价性 --- */
+    {
+        FILE *fp = redirect_stdin_from_string("12345", "t_scanf_2.txt");
+        assert(fp != NULL);
+        int v = 0;
+        int r = fscanf(stdin, "%d", &v);
+        assert(r == 1);
+        assert(v == 12345);
+    }
+
+    /* [3] 返回值 = 成功赋值的输入项数（多项） */
+    {
+        FILE *fp = redirect_stdin_from_string("10 20 30", "t_scanf_3.txt");
+        assert(fp != NULL);
+        int a = 0, b = 0, c = 0;
+        int r = scanf("%d %d %d", &a, &b, &c);
+        assert(r == 3);
+        assert(a == 10 && b == 20 && c == 30);
+    }
+
+    /* [3] 返回值可以少于提供的项数：输入只有 2 个整数，却请求 3 个 */
+    {
+        FILE *fp = redirect_stdin_from_string("7 8", "t_scanf_4.txt");
+        assert(fp != NULL);
+        int a = 0, b = 0, c = -1;
+        int r = scanf("%d %d %d", &a, &b, &c);
+        assert(r == 2);          /* 只成功赋值 2 项 */
+        assert(a == 7 && b == 8);
+        assert(c == -1);         /* 第三项未被赋值 */
+    }
+
+    /* [3] 早期匹配失败：返回 0（尚未赋值任何项） */
+    {
+        FILE *fp = redirect_stdin_from_string("abc", "t_scanf_5.txt");
+        assert(fp != NULL);
+        int v = -1;
+        int r = scanf("%d", &v);
+        assert(r == 0);          /* 早期匹配失败，返回 0 */
+        assert(v == -1);         /* 未赋值 */
+    }
+
+    /* [3] 输入失败且尚未转换时返回 EOF：
+     *     空输入（立即遇到文件结束），%d 无法转换，返回 EOF。 */
+    {
+        FILE *fp = redirect_stdin_from_string("", "t_scanf_6.txt");
+        assert(fp != NULL);
+        int v = -1;
+        int r = scanf("%d", &v);
+        assert(r == EOF);        /* 输入失败，返回 EOF */
+        assert(v == -1);
+    }
+
+    /* [3] 部分成功后再遇输入失败：已赋值 1 项，应返回 1 而非 EOF */
+    {
+        FILE *fp = redirect_stdin_from_string("42", "t_scanf_7.txt");
+        assert(fp != NULL);
+        int a = 0, b = -1;
+        int r = scanf("%d %d", &a, &b);
+        assert(r == 1);          /* 第一项成功，第二项遇 EOF */
+        assert(a == 42);
+        assert(b == -1);
+    }
+
+    /* [2] 与 fscanf(stdin,...) 在“早期匹配失败返回 0”上的一致性 */
+    {
+        FILE *fp = redirect_stdin_from_string("xyz", "t_scanf_8.txt");
+        assert(fp != NULL);
+        int v = -1;
+        int r1 = scanf("%d", &v);
+        assert(r1 == 0);
+        assert(v == -1);
+    }
+    {
+        FILE *fp = redirect_stdin_from_string("xyz", "t_scanf_9.txt");
+        assert(fp != NULL);
+        int v = -1;
+        int r2 = fscanf(stdin, "%d", &v);
+        assert(r2 == 0);
+        assert(v == -1);
+    }
+
+    /* [2] 与 fscanf(stdin,...) 在“输入失败返回 EOF”上的一致性 */
+    {
+        FILE *fp = redirect_stdin_from_string("", "t_scanf_10.txt");
+        assert(fp != NULL);
+        int v = -1;
+        int r1 = scanf("%d", &v);
+        assert(r1 == EOF);
+    }
+    {
+        FILE *fp = redirect_stdin_from_string("", "t_scanf_11.txt");
+        assert(fp != NULL);
+        int v = -1;
+        int r2 = fscanf(stdin, "%d", &v);
+        assert(r2 == EOF);
+    }
+
+    /* [1] 可变参数：混合多种转换说明符，验证 ... 正常工作 */
+    {
+        FILE *fp = redirect_stdin_from_string("99 hello 3.5", "t_scanf_12.txt");
+        assert(fp != NULL);
+        int i = 0;
+        char s[32];
+        double d = 0.0;
+        int r = scanf("%d %31s %lf", &i, s, &d);
+        assert(r == 3);
+        assert(i == 99);
+        assert(strcmp(s, "hello") == 0);
+        assert(d > 3.49 && d < 3.51);
+    }
+
+    /* [1] restrict 限定：format 参数为 const char * restrict，
+     *     传入普通字符串字面量应可正常编译与运行。 */
+    {
+        FILE *fp = redirect_stdin_from_string("5", "t_scanf_13.txt");
+        assert(fp != NULL);
+        int v = 0;
+        const char * restrict fmt = "%d";
+        int r = scanf(fmt, &v);
+        assert(r == 1);
+        assert(v == 5);
+    }
+
+    printf("All positive tests for C99 7.19.6.4 passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「scanf 的第一个参数类型为 const char * restrict」：
+ * 传入 int 作为 format 参数，gcc -std=c99 应报错
+ * （incompatible type / passing argument 1 makes pointer from integer）。 */
+int bad1(void)
+{
+    int x = 0;
+    return scanf(123, &x);   /* 错误：format 必须是 const char * */
+}
+
+/* 违反约束「scanf 为可变参数函数，实参须与转换说明符匹配」：
+ * 对 %d 传入 double* 而非 int*，类型不匹配。
+ * 注意：这是约束违反（类型不兼容），gcc -std=c99 -Wall 应给出警告/错误。 */
+int bad2(void)
+{
+    double d = 0.0;
+    return scanf("%d", &d);  /* 错误：%d 需要 int*，却给了 double* */
+}
+
+/* 违反约束「scanf 需要至少一个参数（format）」：
+ * 无参数调用，gcc -std=c99 应报错（too few arguments）。 */
+int bad3(void)
+{
+    return scanf();          /* 错误：缺少 format 参数 */
+}
+
+/* 违反约束「scanf 的返回类型为 int，不可作为左值赋值」：
+ * 对函数调用结果赋值，gcc -std=c99 应报错（lvalue required）。 */
+int bad4(void)
+{
+    scanf("%d", (int *)0) = 5;  /* 错误：函数调用结果不是左值 */
+    return 0;
+}
+
+#endif /* 负向测试结束 */

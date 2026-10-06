@@ -1,0 +1,207 @@
+/*
+ * 测试条款：ISO/IEC 9899:1999 (C99) 7.25
+ *           Wide character classification and mapping utilities <wctype.h>
+ *
+ * 预期行为：
+ *   - 正向测试：包含 <wctype.h>，使用 iswalpha / iswdigit / iswspace /
+ *     iswupper / iswlower / iswpunct / iswcntrl / iswprint / iswgraph /
+ *     iswblank / iswalnum / iswxdigit 以及 towlower / towupper / wctype /
+ *     iswctype 等函数，程序应能编译并运行通过（assert 全部成立）。
+ *   - 负向测试：违反 7.25 约束的代码片段（例如把非 wint_t 类型传给
+ *     iswalpha、把非 wctype_t 传给 iswctype 等），gcc -std=c99 应报错。
+ *     这些片段统一放在 #if 0 ... #endif 中，保证本文件仍可编译运行。
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [7.25.1] 宽字符分类函数：iswalnum / iswalpha / iswblank / iswcntrl /
+ *          iswdigit / iswgraph / iswlower / iswprint / iswpunct /
+ *          iswspace / iswupper / iswxdigit
+ * 这些函数接受 wint_t 参数，返回非零表示属于该类别，0 表示不属于。
+ * 对 WEOF 的调用应返回 0（不匹配任何类别）。 */
+static void test_classification(void)
+{
+    /* 字母 */
+    assert(iswalpha(L'A') != 0);
+    assert(iswalpha(L'z') != 0);
+    assert(iswalpha(L'0') == 0);
+    assert(iswalpha(L' ') == 0);
+
+    /* 数字 */
+    assert(iswdigit(L'0') != 0);
+    assert(iswdigit(L'9') != 0);
+    assert(iswdigit(L'A') == 0);
+
+    /* 字母或数字 */
+    assert(iswalnum(L'A') != 0);
+    assert(iswalnum(L'5') != 0);
+    assert(iswalnum(L' ') == 0);
+
+    /* 空白（空格、制表、换行等） */
+    assert(iswspace(L' ') != 0);
+    assert(iswspace(L'\t') != 0);
+    assert(iswspace(L'\n') != 0);
+    assert(iswspace(L'A') == 0);
+
+    /* 空白（仅空格和水平制表，C99 新增 iswblank） */
+    assert(iswblank(L' ') != 0);
+    assert(iswblank(L'\t') != 0);
+    assert(iswblank(L'\n') == 0);
+
+    /* 大写 / 小写 */
+    assert(iswupper(L'A') != 0);
+    assert(iswupper(L'a') == 0);
+    assert(iswlower(L'a') != 0);
+    assert(iswlower(L'A') == 0);
+
+    /* 标点 */
+    assert(iswpunct(L'!') != 0);
+    assert(iswpunct(L',') != 0);
+    assert(iswpunct(L'A') == 0);
+
+    /* 控制字符 */
+    assert(iswcntrl(L'\n') != 0);
+    assert(iswcntrl(L'\t') != 0);
+    assert(iswcntrl(L'A') == 0);
+
+    /* 可打印 / 可显示 */
+    assert(iswprint(L'A') != 0);
+    assert(iswprint(L' ') != 0);
+    assert(iswprint(L'\n') == 0);
+    assert(iswgraph(L'A') != 0);
+    assert(iswgraph(L' ') == 0);
+
+    /* 十六进制数字 */
+    assert(iswxdigit(L'0') != 0);
+    assert(iswxdigit(L'a') != 0);
+    assert(iswxdigit(L'F') != 0);
+    assert(iswxdigit(L'g') == 0);
+
+    /* WEOF 不属于任何类别 */
+    assert(iswalpha(WEOF) == 0);
+    assert(iswdigit(WEOF) == 0);
+    assert(iswspace(WEOF) == 0);
+    assert(iswprint(WEOF) == 0);
+}
+
+/* [7.25.2.1] towlower / towupper：宽字符大小写映射
+ * 若参数不是对应大小写的宽字符，则原样返回。 */
+static void test_mapping(void)
+{
+    assert(towlower(L'A') == L'a');
+    assert(towlower(L'Z') == L'z');
+    assert(towlower(L'a') == L'a');   /* 已是小写，原样返回 */
+    assert(towlower(L'0') == L'0');   /* 非字母，原样返回 */
+
+    assert(towupper(L'a') == L'A');
+    assert(towupper(L'z') == L'Z');
+    assert(towupper(L'A') == L'A');   /* 已是大写，原样返回 */
+    assert(towupper(L'0') == L'0');   /* 非字母，原样返回 */
+
+    /* WEOF 应原样返回 */
+    assert(towlower(WEOF) == WEOF);
+    assert(towupper(WEOF) == WEOF);
+}
+
+/* [7.25.2.2] wctype / iswctype：可扩展的宽字符分类
+ * wctype 根据名称返回 wctype_t；iswctype 判断字符是否属于该类别。
+ * 若名称不被支持，wctype 返回 0。 */
+static void test_wctype(void)
+{
+    wctype_t t_alpha = wctype("alpha");
+    wctype_t t_digit = wctype("digit");
+    wctype_t t_space = wctype("space");
+    wctype_t t_upper = wctype("upper");
+    wctype_t t_lower = wctype("lower");
+
+    /* 标准要求至少支持这些名称 */
+    assert(t_alpha != (wctype_t)0);
+    assert(t_digit != (wctype_t)0);
+    assert(t_space != (wctype_t)0);
+    assert(t_upper != (wctype_t)0);
+    assert(t_lower != (wctype_t)0);
+
+    /* iswctype 与对应 isw* 函数结果一致 */
+    assert(iswctype(L'A', t_alpha) != 0);
+    assert(iswctype(L'0', t_alpha) == 0);
+    assert(iswctype(L'7', t_digit) != 0);
+    assert(iswctype(L'A', t_digit) == 0);
+    assert(iswctype(L' ', t_space) != 0);
+    assert(iswctype(L'A', t_space) == 0);
+    assert(iswctype(L'A', t_upper) != 0);
+    assert(iswctype(L'a', t_upper) == 0);
+    assert(iswctype(L'a', t_lower) != 0);
+    assert(iswctype(L'A', t_lower) == 0);
+
+    /* 不支持的名称返回 0 */
+    wctype_t t_bogus = wctype("no_such_class_xyz");
+    assert(t_bogus == (wctype_t)0);
+
+    /* 对 WEOF 调用 iswctype 应返回 0 */
+    assert(iswctype(WEOF, t_alpha) == 0);
+}
+
+/* [7.25.1] 参数类型为 wint_t，可接受普通字符（经整型提升） */
+static void test_wint_t_argument(void)
+{
+    /* 普通 char 常量可隐式转换为 wint_t */
+    assert(iswalpha('A') != 0);
+    assert(iswdigit('5') != 0);
+    assert(towlower('A') == 'a');
+
+    /* 显式转换为 wint_t */
+    assert(iswalpha((wint_t)L'B') != 0);
+}
+
+int main(void)
+{
+    /* 使用 "C" locale 保证分类结果可预测 */
+    setlocale(LC_ALL, "C");
+
+    test_classification();
+    test_mapping();
+    test_wctype();
+    test_wint_t_argument();
+
+    printf("C99 7.25 <wctype.h> positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「isw* 系列函数的参数类型为 wint_t」：
+ * 传入结构体类型，gcc -std=c99 应报错（incompatible type / 参数类型不匹配）。 */
+struct S { int x; };
+struct S s;
+iswalpha(s);          /* error: 参数类型不是 wint_t */
+
+/* 违反约束「towlower/towupper 的参数类型为 wint_t」：
+ * 传入指针类型，应报错。 */
+int *p = 0;
+towlower(p);          /* error: 参数类型不是 wint_t */
+
+/* 违反约束「iswctype 的第二个参数类型为 wctype_t」：
+ * 传入字符串字面量（char*），应报错。 */
+iswctype(L'A', "alpha");   /* error: 第二个参数不是 wctype_t */
+
+/* 违反约束「wctype 的参数类型为 const char *」：
+ * 传入宽字符串（wchar_t*），应报错。 */
+wctype(L"alpha");          /* error: 参数类型不是 const char * */
+
+/* 违反约束「iswctype 的第一个参数类型为 wint_t」：
+ * 传入结构体，应报错。 */
+wctype_t t = wctype("alpha");
+iswctype(s, t);            /* error: 第一个参数类型不是 wint_t */
+
+/* 违反约束「wctype 返回 wctype_t，不能赋给不兼容类型」：
+ * 将 wctype_t 赋给结构体，应报错。 */
+struct S s2 = wctype("alpha");   /* error: 类型不兼容 */
+
+#endif

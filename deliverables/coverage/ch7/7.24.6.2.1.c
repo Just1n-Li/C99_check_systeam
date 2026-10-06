@@ -1,0 +1,117 @@
+/*
+ * 测试 C99 7.24.6.2.1 —— mbsinit 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 条款要点：
+ *   [1] 原型：int mbsinit(const mbstate_t *ps);  需要 <wchar.h>
+ *   [2] 若 ps 非空指针，判断所指 mbstate_t 对象是否描述初始转换状态
+ *   [3] 返回：ps 为空指针，或所指对象描述初始转换状态时返回非零；否则返回零
+ */
+
+#include <wchar.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 检查函数原型可用：取函数地址，类型应为 int (*)(const mbstate_t *) */
+static int (*fp_mbsinit)(const mbstate_t *) = mbsinit;
+
+int main(void)
+{
+    /* [1] 原型存在且可调用 */
+    (void)fp_mbsinit;
+
+    /* [3] ps 为 NULL 时必须返回非零 */
+    assert(mbsinit(NULL) != 0);
+
+    /* [2][3] 零初始化的 mbstate_t 描述初始转换状态，应返回非零 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        assert(mbsinit(&st) != 0);
+    }
+
+    /* [2][3] 静态存储期对象被零初始化，同样描述初始转换状态 */
+    {
+        static mbstate_t st_static;
+        assert(mbsinit(&st_static) != 0);
+    }
+
+    /* [2][3] 通过 mbrtowc 使用后，若转换回到初始状态，mbsinit 应返回非零；
+     *       这里只验证“初始状态”这一确定语义，不依赖具体实现细节。 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        /* 对初始状态对象反复查询，结果应稳定为非零 */
+        assert(mbsinit(&st) != 0);
+        assert(mbsinit(&st) != 0);
+    }
+
+    /* [3] 返回值语义：非零 / 零 的布尔判定 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        if (mbsinit(&st)) {
+            /* 初始状态：进入此分支 */
+        } else {
+            assert(!"zero-initialized mbstate_t must be initial state");
+        }
+        if (mbsinit(NULL)) {
+            /* NULL 指针：进入此分支 */
+        } else {
+            assert(!"mbsinit(NULL) must be nonzero");
+        }
+    }
+
+    printf("C99 7.24.6.2.1 mbsinit: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「实参类型必须与原型参数兼容」：
+ * mbsinit 的参数是 const mbstate_t *，传入 int 应报错。
+ * 期望：gcc -std=c99 报 incompatible type for argument 1 of 'mbsinit' */
+{
+    int x = 0;
+    mbsinit(x);
+}
+
+/* 违反约束「实参个数必须与原型一致」：
+ * 原型只接受 1 个参数，传 2 个应报错。
+ * 期望：gcc -std=c99 报 too many arguments to function 'mbsinit' */
+{
+    mbstate_t st;
+    mbsinit(&st, &st);
+}
+
+/* 违反约束「实参个数必须与原型一致」：
+ * 原型要求 1 个参数，传 0 个应报错。
+ * 期望：gcc -std=c99 报 too few arguments to function 'mbsinit' */
+{
+    mbsinit();
+}
+
+/* 违反约束「函数返回值不可作为左值赋值」：
+ * mbsinit 返回 int，是右值，不能赋值。
+ * 期望：gcc -std=c99 报 lvalue required as left operand of assignment */
+{
+    mbsinit(NULL) = 1;
+}
+
+/* 违反约束「const 限定：不能通过指向 const 的指针修改对象」：
+ * 参数为 const mbstate_t *，解引用后赋值应报错。
+ * 期望：gcc -std=c99 报 assignment of read-only location */
+{
+    mbstate_t st;
+    const mbstate_t *ps = &st;
+    *ps = st;
+}
+
+#endif

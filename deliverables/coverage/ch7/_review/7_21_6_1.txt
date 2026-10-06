@@ -1,0 +1,186 @@
+=== ARTICLE 7.21.6.1 ===
+--- TEXT ---
+The memset function
+Synopsis:
+[1] #include <string.h> void *memset(void *s, int c, size_t n);
+Description:
+[2] The memset function copies the value of c (converted to an unsigned char) into each of the first n characters of the object pointed to by s.
+Returns:
+[3] The memset function returns the value of s.
+--- CODE ---
+/*
+ * 测试目标：C99 7.21.6.1 The memset function
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 条款要点：
+ *   [1] 原型：void *memset(void *s, int c, size_t n);  声明于 <string.h>
+ *   [2] 语义：把 c（转换为 unsigned char）写入 s 所指对象的前 n 个字符
+ *   [3] 返回：返回 s 的值
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性：包含 <string.h> 后可直接调用 memset，且返回 void* */
+static void test_prototype(void)
+{
+    char buf[8];
+    void *r = memset(buf, 0, sizeof buf);   /* [1] 原型可用 */
+    assert(r == (void *)buf);               /* [3] 返回 s 的值 */
+}
+
+/* [2] 语义：c 被转换为 unsigned char 后逐字节写入前 n 个字符 */
+static void test_semantics_basic(void)
+{
+    unsigned char buf[10];
+    size_t i;
+
+    /* 先填成 0xAA，便于观察覆盖范围 */
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;
+
+    memset(buf, 0x5A, 4);                   /* [2] 只写前 4 个字符 */
+
+    for (i = 0; i < 4; i++)
+        assert(buf[i] == 0x5A);             /* [2] 前 4 个被写入 */
+    for (i = 4; i < sizeof buf; i++)
+        assert(buf[i] == 0xAA);             /* [2] 其余不受影响 */
+}
+
+/* [2] c 转换为 unsigned char：传入 int 值 0x1FF 应只保留低 8 位 0xFF */
+static void test_conversion_to_unsigned_char(void)
+{
+    unsigned char buf[4];
+    size_t i;
+
+    memset(buf, 0x1FF, sizeof buf);         /* [2] (unsigned char)0x1FF == 0xFF */
+    for (i = 0; i < sizeof buf; i++)
+        assert(buf[i] == 0xFF);
+
+    /* 负值同样按 unsigned char 截断：-1 -> 0xFF */
+    memset(buf, -1, sizeof buf);
+    for (i = 0; i < sizeof buf; i++)
+        assert(buf[i] == 0xFF);
+
+    /* 256 -> 0x00 */
+    memset(buf, 256, sizeof buf);
+    for (i = 0; i < sizeof buf; i++)
+        assert(buf[i] == 0x00);
+}
+
+/* [2] n == 0 时不写入任何字符 */
+static void test_zero_length(void)
+{
+    unsigned char buf[4] = { 1, 2, 3, 4 };
+    void *r = memset(buf, 0x77, 0);         /* [2] n=0，不写 */
+    assert(r == (void *)buf);               /* [3] 仍返回 s */
+    assert(buf[0] == 1 && buf[1] == 2 && buf[2] == 3 && buf[3] == 4);
+}
+
+/* [3] 返回值就是传入的 s（同一指针值） */
+static void test_return_value(void)
+{
+    char buf[16];
+    char *p = buf + 3;
+    void *r = memset(p, 'x', 5);
+    assert(r == (void *)p);                 /* [3] 返回 s 本身 */
+    assert(buf[3] == 'x' && buf[7] == 'x');
+    assert(buf[2] == 0 || buf[2] != 'x');   /* 未触及区域（此处仅示意） */
+}
+
+/* [2] 可用于任意对象类型（此处为结构体对象），按字节清零 */
+struct Point { int x; int y; };
+
+static void test_any_object(void)
+{
+    struct Point pt;
+    pt.x = 12345;
+    pt.y = -6789;
+
+    memset(&pt, 0, sizeof pt);              /* [2] 对任意对象按字节写 */
+    assert(pt.x == 0);
+    assert(pt.y == 0);
+}
+
+/* [2][3] 链式使用返回值：memset 返回 s，可继续作为参数 */
+static void test_chaining(void)
+{
+    char buf[8];
+    void *r = memset(memset(buf, 'a', 8), 'b', 3);  /* [3] 返回值可链式使用 */
+    assert(r == (void *)buf);
+    assert(buf[0] == 'b' && buf[1] == 'b' && buf[2] == 'b');
+    assert(buf[3] == 'a' && buf[7] == 'a');
+}
+
+int main(void)
+{
+    test_prototype();
+    test_semantics_basic();
+    test_conversion_to_unsigned_char();
+    test_zero_length();
+    test_return_value();
+    test_any_object();
+    test_chaining();
+
+    printf("C99 7.21.6.1 memset: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「memset 原型为 void *memset(void *, int, size_t)」：
+ * 第三个参数必须是整型（size_t 兼容类型），传指针应报错。
+ * 期望：gcc -std=c99 报 incompatible type / 参数类型不匹配。 */
+#include <string.h>
+void bad_arg3(void)
+{
+    char buf[4];
+    char *p = buf;
+    memset(buf, 0, p);          /* 第三个实参为指针，非整型 */
+}
+
+/* 违反约束「第一个参数为 void *」：
+ * 传入非指针类型（如 int）应报错。
+ * 期望：gcc -std=c99 报 incompatible type for argument 1。 */
+void bad_arg1(void)
+{
+    memset(42, 0, 4);           /* 第一个实参为 int，非指针 */
+}
+
+/* 违反约束「第二个参数为 int」：
+ * 传入结构体类型应报错。
+ * 期望：gcc -std=c99 报 incompatible type for argument 2。 */
+struct S { int a; };
+void bad_arg2(void)
+{
+    char buf[4];
+    struct S s;
+    memset(buf, s, 4);          /* 第二个实参为结构体，非 int */
+}
+
+/* 违反约束「调用需在 <string.h> 声明可见」：
+ * 未包含 <string.h> 且无自身声明时，C99 不允许隐式函数声明。
+ * 期望：gcc -std=c99 报 implicit declaration of function 'memset'。 */
+void bad_no_decl(void)
+{
+    char buf[4];
+    memset(buf, 0, 4);          /* 无可见原型 */
+}
+
+/* 违反约束「返回值类型为 void *」：
+ * 将返回值赋给不兼容的指针类型（如 int *）在 C99 中为约束违反（需诊断）。
+ * 期望：gcc -std=c99 报 incompatible pointer types（默认 -Werror 下报错）。 */
+void bad_return_type(void)
+{
+    char buf[4];
+    int *ip = memset(buf, 0, 4);    /* void* 赋给 int*，类型不兼容 */
+    (void)ip;
+}
+
+#endif /* 负向测试结束 */

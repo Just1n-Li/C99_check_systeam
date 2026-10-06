@@ -1,0 +1,208 @@
+=== TEXT ===
+The wmemset function
+Synopsis:
+[1] #include <wchar.h> wchar_t *wmemset(wchar_t *s, wchar_t c, size_t n);
+Description:
+[2] The wmemset function copies the value of c into each of the first n wide characters of the object pointed to by s.
+Returns:
+[3] The wmemset function returns the value of s.
+
+=== CODE ===
+/*
+ * 测试条款：C99 7.24.4.6.2  The wmemset function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：wchar_t *wmemset(wchar_t *s, wchar_t c, size_t n);
+ *   [2] 语义：把 c 的值复制到 s 所指对象的前 n 个宽字符中。
+ *   [3] 返回值：返回 s 的值。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <stddef.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与标准原型完全一致 */
+static wchar_t *(*fp_wmemset)(wchar_t *, wchar_t, size_t) = wmemset;
+
+int main(void)
+{
+    /* [1] 原型可用性：能取地址、能通过函数指针调用 */
+    assert(fp_wmemset == wmemset);
+
+    /* [2] 基本语义：把 c 复制到前 n 个宽字符 */
+    {
+        wchar_t buf[8] = { L'A', L'B', L'C', L'D', L'E', L'F', L'G', L'H' };
+        wchar_t *r;
+
+        r = wmemset(buf, L'Z', 3);
+        assert(buf[0] == L'Z');
+        assert(buf[1] == L'Z');
+        assert(buf[2] == L'Z');
+        /* 第 n 个之后必须保持不变 */
+        assert(buf[3] == L'D');
+        assert(buf[4] == L'E');
+        assert(buf[5] == L'F');
+        assert(buf[6] == L'G');
+        assert(buf[7] == L'H');
+
+        /* [3] 返回值必须等于 s */
+        assert(r == buf);
+    }
+
+    /* [2] n == 0：不写入任何字符，缓冲区保持不变 */
+    {
+        wchar_t buf[4] = { L'1', L'2', L'3', L'4' };
+        wchar_t *r = wmemset(buf, L'X', 0);
+        assert(buf[0] == L'1');
+        assert(buf[1] == L'2');
+        assert(buf[2] == L'3');
+        assert(buf[3] == L'4');
+        /* [3] 即使 n == 0 也返回 s */
+        assert(r == buf);
+    }
+
+    /* [2] 覆盖整个数组 */
+    {
+        wchar_t buf[5] = { L'a', L'b', L'c', L'd', L'e' };
+        wchar_t *r = wmemset(buf, L'\0', 5);
+        int i;
+        for (i = 0; i < 5; i++)
+            assert(buf[i] == L'\0');
+        assert(r == buf);
+    }
+
+    /* [2] 复制宽字符 L'\0' 之外的值，例如非 ASCII 宽字符 */
+    {
+        wchar_t buf[3] = { 0, 0, 0 };
+        wchar_t *r = wmemset(buf, (wchar_t)0x4E2D /* 中 */, 3);
+        assert(buf[0] == (wchar_t)0x4E2D);
+        assert(buf[1] == (wchar_t)0x4E2D);
+        assert(buf[2] == (wchar_t)0x4E2D);
+        assert(r == buf);
+    }
+
+    /* [2] 从数组中间开始填充（s 指向对象内部） */
+    {
+        wchar_t buf[6] = { L'0', L'1', L'2', L'3', L'4', L'5' };
+        wchar_t *r = wmemset(buf + 2, L'#', 3);
+        assert(buf[0] == L'0');
+        assert(buf[1] == L'1');
+        assert(buf[2] == L'#');
+        assert(buf[3] == L'#');
+        assert(buf[4] == L'#');
+        assert(buf[5] == L'5');
+        /* [3] 返回的是传入的 s（即 buf + 2），不是 buf */
+        assert(r == buf + 2);
+    }
+
+    /* [2] 用 wmemset 构造宽字符串，再用 wcslen 验证 */
+    {
+        wchar_t buf[10];
+        wmemset(buf, L'q', 9);
+        buf[9] = L'\0';
+        assert(wcslen(buf) == 9);
+        assert(buf[0] == L'q' && buf[8] == L'q');
+    }
+
+    /* [3] 返回值可链式使用 */
+    {
+        wchar_t buf[4] = { 0, 0, 0, 0 };
+        wchar_t *r = wmemset(wmemset(buf, L'A', 2), L'B', 2);
+        assert(r == buf);
+        assert(buf[0] == L'B');
+        assert(buf[1] == L'B');
+        assert(buf[2] == L'A');
+        assert(buf[3] == L'A');
+    }
+
+    printf("wmemset: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「实参类型必须与原型匹配」：
+ * wmemset 的第一个参数是 wchar_t *，传入 int * 应报错。
+ * 期望：gcc -std=c99 报 incompatible pointer type / passing argument 1 ... 错误。
+ */
+{
+    int ibuf[4];
+    wmemset(ibuf, L'x', 4);   /* 错误：int * 不能隐式转换为 wchar_t * */
+}
+
+/* 违反约束「实参类型必须与原型匹配」：
+ * 第二个参数是 wchar_t，传入指针类型应报错。
+ * 期望：gcc -std=c99 报 incompatible type for argument 2 错误。
+ */
+{
+    wchar_t buf[4];
+    wmemset(buf, (wchar_t *)0, 4);  /* 错误：wchar_t * 不能转换为 wchar_t */
+}
+
+/* 违反约束「实参类型必须与原型匹配」：
+ * 第三个参数是 size_t，传入结构体类型应报错。
+ * 期望：gcc -std=c99 报 incompatible type for argument 3 错误。
+ */
+{
+    struct S { int a; } s;
+    wchar_t buf[4];
+    wmemset(buf, L'x', s);   /* 错误：结构体不能转换为 size_t */
+}
+
+/* 违反约束「实参个数必须与原型一致」：
+ * 原型要求 3 个参数，只传 2 个应报错。
+ * 期望：gcc -std=c99 报 too few arguments to function 'wmemset' 错误。
+ */
+{
+    wchar_t buf[4];
+    wmemset(buf, L'x');      /* 错误：参数个数不足 */
+}
+
+/* 违反约束「实参个数必须与原型一致」：
+ * 原型要求 3 个参数，传 4 个应报错。
+ * 期望：gcc -std=c99 报 too many arguments to function 'wmemset' 错误。
+ */
+{
+    wchar_t buf[4];
+    wmemset(buf, L'x', 4, 0);  /* 错误：参数个数过多 */
+}
+
+/* 违反约束「赋值目标必须是可修改的左值」：
+ * wmemset 返回 wchar_t *，但若把返回值赋给数组名（非左值）应报错。
+ * 期望：gcc -std=c99 报 lvalue required as left operand of assignment 错误。
+ */
+{
+    wchar_t buf[4];
+    wchar_t other[4];
+    other = wmemset(buf, L'x', 4);  /* 错误：数组名不是可修改左值 */
+}
+
+/* 违反约束「const 限定对象不可修改」：
+ * 把 const wchar_t * 传给 wchar_t * 参数应报错（丢弃 const 限定）。
+ * 期望：gcc -std=c99 报 passing argument 1 ... discards 'const' qualifier 错误。
+ */
+{
+    const wchar_t cbuf[4] = { 0, 0, 0, 0 };
+    wmemset(cbuf, L'x', 4);   /* 错误：丢弃 const 限定符 */
+}
+
+/* 违反约束「函数调用必须使用已声明的标识符」：
+ * 未包含 <wchar.h> 时调用 wmemset，C99 下隐式声明被禁止。
+ * 期望：gcc -std=c99 报 implicit declaration of function 'wmemset' 错误。
+ * （注：本片段假设未包含 <wchar.h>；实际文件中已包含，故仅作示意。）
+ */
+{
+    wchar_t buf[4];
+    wmemset(buf, L'x', 4);   /* 错误：若未声明则隐式声明被禁止 */
+}
+
+#endif /* 负向测试结束 */

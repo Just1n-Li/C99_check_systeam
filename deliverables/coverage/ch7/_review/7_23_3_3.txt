@@ -1,0 +1,184 @@
+=== ARTICLE 7.23.3.3 ===
+--- TEXT ---
+The gmtime function
+Synopsis:
+[1] #include <time.h> struct tm *gmtime(const time_t *timer);
+Description:
+[2] The gmtime function converts the calendar time pointed to by timer into a broken- down time, expressed as UTC.
+Returns:
+[3] The gmtime function returns a pointer to the broken-down time, or a null pointer if the specified time cannot be converted to UTC.
+--- CODE ---
+/*
+ * 测试 C99 7.23.3.3 —— gmtime 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 条款要点：
+ *   [1] 原型：struct tm *gmtime(const time_t *timer);  需要 <time.h>
+ *   [2] 语义：把 timer 指向的日历时间转换为 UTC 分解时间
+ *   [3] 返回：成功返回指向分解时间的指针；无法转换时返回空指针
+ */
+
+#include <stdio.h>
+#include <time.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性检查：函数指针类型必须与声明一致 */
+static struct tm *(*gmtime_proto)(const time_t *) = gmtime;
+
+/* [2] 语义：gmtime 把日历时间转换为 UTC 分解时间。
+ *     用已知的 epoch 值 0（1970-01-01 00:00:00 UTC）验证。 */
+static void test_epoch_zero(void)
+{
+    time_t t = (time_t)0;
+    struct tm *p = gmtime(&t);
+
+    /* [3] 成功时应返回非空指针 */
+    assert(p != NULL);
+
+    /* [2] UTC 分解结果：1970-01-01 00:00:00，星期四 */
+    assert(p->tm_year == 70);   /* 自 1900 起算的年数：1970 - 1900 = 70 */
+    assert(p->tm_mon  == 0);    /* 一月 */
+    assert(p->tm_mday == 1);    /* 1 号 */
+    assert(p->tm_hour == 0);
+    assert(p->tm_min  == 0);
+    assert(p->tm_sec  == 0);
+    assert(p->tm_wday == 4);    /* 星期四 */
+    assert(p->tm_yday == 0);    /* 一年中的第 0 天 */
+}
+
+/* [2] 语义：另一个已知时间点，验证 UTC 转换（非本地时间）。
+ *     86400 秒 = 1970-01-02 00:00:00 UTC */
+static void test_one_day_later(void)
+{
+    time_t t = (time_t)86400;
+    struct tm *p = gmtime(&t);
+
+    assert(p != NULL);
+    assert(p->tm_year == 70);
+    assert(p->tm_mon  == 0);
+    assert(p->tm_mday == 2);
+    assert(p->tm_hour == 0);
+    assert(p->tm_min  == 0);
+    assert(p->tm_sec  == 0);
+    assert(p->tm_wday == 5);    /* 星期五 */
+    assert(p->tm_yday == 1);
+}
+
+/* [2] 语义：验证 UTC 与本地时间可能不同（若本地时区非 UTC）。
+ *     这里只验证 gmtime 结果与 timegm 往返一致（若可用则跳过），
+ *     改为验证 gmtime 对同一输入是确定性的。 */
+static void test_deterministic(void)
+{
+    time_t t = (time_t)1234567890;
+    struct tm *p1 = gmtime(&t);
+    struct tm *p2 = gmtime(&t);
+
+    assert(p1 != NULL);
+    assert(p2 != NULL);
+    /* 同一输入应得到相同的分解结果 */
+    assert(p1->tm_year == p2->tm_year);
+    assert(p1->tm_mon  == p2->tm_mon);
+    assert(p1->tm_mday == p2->tm_mday);
+    assert(p1->tm_hour == p2->tm_hour);
+    assert(p1->tm_min  == p2->tm_min);
+    assert(p1->tm_sec  == p2->tm_sec);
+}
+
+/* [3] 返回：无法转换时返回空指针。
+ *     使用一个极大值，通常超出可表示范围。 */
+static void test_out_of_range(void)
+{
+    /* 构造一个很可能无法转换的时间值 */
+    time_t t = (time_t)-1;   /* 常见实现中 -1 无法转换 */
+    struct tm *p = gmtime(&t);
+
+    /* 若实现能转换则 p 非空；若不能则 p 为空。
+     * 两种都符合 [3]，这里只验证不崩溃且返回值语义一致。 */
+    if (p != NULL) {
+        /* 能转换：结果应是合法的分解时间 */
+        assert(p->tm_mon >= 0 && p->tm_mon <= 11);
+        assert(p->tm_mday >= 1 && p->tm_mday <= 31);
+        assert(p->tm_hour >= 0 && p->tm_hour <= 23);
+        assert(p->tm_min  >= 0 && p->tm_min  <= 59);
+        assert(p->tm_sec  >= 0 && p->tm_sec  <= 60);
+    }
+    /* p == NULL 也符合 [3] */
+}
+
+/* [1] 原型检查：参数类型必须是 const time_t * */
+static void test_proto_signature(void)
+{
+    /* 通过函数指针赋值验证签名匹配 */
+    struct tm *(*fp)(const time_t *) = gmtime_proto;
+    assert(fp == gmtime);
+}
+
+int main(void)
+{
+    test_proto_signature();
+    test_epoch_zero();
+    test_one_day_later();
+    test_deterministic();
+    test_out_of_range();
+
+    printf("C99 7.23.3.3 gmtime: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「gmtime 的参数类型为 const time_t *」：
+ * 传入 int * 而非 time_t *，gcc -std=c99 应报错
+ * （incompatible pointer type）。 */
+{
+    int x = 0;
+    struct tm *p = gmtime(&x);   /* 错误：int * 与 const time_t * 不兼容 */
+    (void)p;
+}
+
+/* 违反约束「gmtime 的参数类型为 const time_t *」：
+ * 传入 struct tm * 而非 time_t *，应报错。 */
+{
+    struct tm tmv;
+    struct tm *p = gmtime(&tmv); /* 错误：struct tm * 与 const time_t * 不兼容 */
+    (void)p;
+}
+
+/* 违反约束「gmtime 返回 struct tm *」：
+ * 把返回值赋给不兼容的指针类型，应报错。 */
+{
+    time_t t = 0;
+    int *p = gmtime(&t);         /* 错误：struct tm * 赋给 int * */
+    (void)p;
+}
+
+/* 违反约束「gmtime 需要一个参数」：
+ * 调用时缺少实参，应报错。 */
+{
+    struct tm *p = gmtime();     /* 错误：参数太少 */
+    (void)p;
+}
+
+/* 违反约束「gmtime 只接受一个参数」：
+ * 调用时传入过多实参，应报错。 */
+{
+    time_t t = 0;
+    struct tm *p = gmtime(&t, &t); /* 错误：参数太多 */
+    (void)p;
+}
+
+/* 违反约束「gmtime 的参数必须是指针类型」：
+ * 传入整数而非指针，应报错。 */
+{
+    struct tm *p = gmtime(0);    /* 错误：int 不能转换为 const time_t * */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

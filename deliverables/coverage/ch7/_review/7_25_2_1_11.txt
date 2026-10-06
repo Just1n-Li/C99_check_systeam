@@ -1,0 +1,163 @@
+=== TEXT ===
+The iswupper function
+Synopsis:
+[1] #include <wctype.h> int iswupper(wint_t wc);
+Description:
+[2] The iswupper function tests for any wide character that corresponds to an uppercase letter or is one of a locale-specific set of wide characters for which none of iswcntrl, iswdigit, iswpunct, or iswspace is true.
+
+=== CODE ===
+/*
+ * 测试条款：C99 7.25.2.1.11 —— iswupper 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，调用 iswupper(wint_t)，验证：
+ *             [1] 原型 int iswupper(wint_t);
+ *             [2] 对大写宽字符返回非零；对非大写宽字符返回 0；
+ *                 对 iswcntrl/iswdigit/iswpunct/iswspace 为真的字符返回 0。
+ *   负向测试：违反约束的代码应编译报错（见文件末尾 #if 0 块）。
+ *
+ * 编译：gcc -std=c99 -Wall -Wextra test.c -o test
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 验证函数原型：int iswupper(wint_t wc);
+ *     通过取函数指针并检查其类型来确认签名。 */
+static int (*fp_iswupper)(wint_t) = iswupper;
+
+int main(void)
+{
+    /* [1] 原型存在且可调用，返回类型为 int */
+    {
+        int r = iswupper(L'A');
+        assert(r != 0);            /* 大写字母 -> 非零 */
+        (void)fp_iswupper;         /* 使用函数指针，确认签名匹配 */
+    }
+
+    /* [2] 大写字母（ASCII 范围）应返回非零 */
+    {
+        const wchar_t uppers[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        for (size_t i = 0; uppers[i] != L'\0'; ++i) {
+            assert(iswupper(uppers[i]) != 0);
+        }
+    }
+
+    /* [2] 小写字母应返回 0（不是大写字母） */
+    {
+        const wchar_t lowers[] = L"abcdefghijklmnopqrstuvwxyz";
+        for (size_t i = 0; lowers[i] != L'\0'; ++i) {
+            assert(iswupper(lowers[i]) == 0);
+        }
+    }
+
+    /* [2] 数字字符：iswdigit 为真，故 iswupper 必须为 0 */
+    {
+        const wchar_t digits[] = L"0123456789";
+        for (size_t i = 0; digits[i] != L'\0'; ++i) {
+            assert(iswdigit(digits[i]) != 0);
+            assert(iswupper(digits[i]) == 0);
+        }
+    }
+
+    /* [2] 空白字符：iswspace 为真，故 iswupper 必须为 0 */
+    {
+        const wchar_t spaces[] = L" \t\n\v\f\r";
+        for (size_t i = 0; spaces[i] != L'\0'; ++i) {
+            assert(iswspace(spaces[i]) != 0);
+            assert(iswupper(spaces[i]) == 0);
+        }
+    }
+
+    /* [2] 控制字符：iswcntrl 为真，故 iswupper 必须为 0 */
+    {
+        /* 常见控制字符：NUL 之外的若干控制码 */
+        const wint_t ctrls[] = { 0x01, 0x02, 0x07, 0x08, 0x0B, 0x0C, 0x1B, 0x7F };
+        for (size_t i = 0; i < sizeof(ctrls)/sizeof(ctrls[0]); ++i) {
+            assert(iswcntrl(ctrls[i]) != 0);
+            assert(iswupper(ctrls[i]) == 0);
+        }
+    }
+
+    /* [2] 标点字符：iswpunct 为真，故 iswupper 必须为 0 */
+    {
+        const wchar_t puncts[] = L"!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+        for (size_t i = 0; puncts[i] != L'\0'; ++i) {
+            assert(iswpunct(puncts[i]) != 0);
+            assert(iswupper(puncts[i]) == 0);
+        }
+    }
+
+    /* [2] 一致性检查：对任意字符，若 iswupper 为真，
+     *     则 iswcntrl/iswdigit/iswpunct/iswspace 必须全为假。 */
+    {
+        for (wint_t wc = 0; wc < 128; ++wc) {
+            if (iswupper(wc)) {
+                assert(iswcntrl(wc) == 0);
+                assert(iswdigit(wc) == 0);
+                assert(iswpunct(wc) == 0);
+                assert(iswspace(wc) == 0);
+            }
+        }
+    }
+
+    /* [2] 与 iswlower 的互补性（ASCII 字母范围内）：
+     *     大写字母 iswupper 真、iswlower 假；小写反之。 */
+    {
+        for (wint_t wc = L'A'; wc <= L'Z'; ++wc) {
+            assert(iswupper(wc) != 0);
+            assert(iswlower(wc) == 0);
+        }
+        for (wint_t wc = L'a'; wc <= L'z'; ++wc) {
+            assert(iswupper(wc) == 0);
+            assert(iswlower(wc) != 0);
+        }
+    }
+
+    /* [2] 非字母字符（如 '@'）不是大写字母 */
+    assert(iswupper(L'@') == 0);
+    assert(iswupper(L'[') == 0);
+    assert(iswupper(L'`') == 0);
+
+    /* [2] 参数类型为 wint_t，可接受 WEOF 而不崩溃（WEOF 不是大写字母） */
+    assert(iswupper(WEOF) == 0);
+
+    printf("All positive tests for C99 7.25.2.1.11 (iswupper) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用参数类型不匹配」：
+ * iswupper 的参数类型为 wint_t，传入结构体类型无法隐式转换，
+ * gcc -std=c99 应报错（incompatible type for argument）。 */
+struct S { int x; } s;
+iswupper(s);
+
+/* 违反约束「函数调用参数个数不匹配」：
+ * iswupper 只接受 1 个参数，传 2 个应报错（too many arguments）。 */
+iswupper(L'A', L'B');
+
+/* 违反约束「函数调用参数个数不匹配」：
+ * 不传参数应报错（too few arguments）。 */
+iswupper();
+
+/* 违反约束「对非左值赋值」：
+ * iswupper 返回 int 值，不是左值，不能赋值。 */
+iswupper(L'A') = 1;
+
+/* 违反约束「取函数返回值地址」：
+ * 函数返回值不是左值，不能取地址。 */
+int *p = &iswupper(L'A');
+
+/* 违反约束「未声明标识符」：
+ * 未包含 <wctype.h> 时使用 iswupper 应报错（implicit declaration 在 C99 中为错误）。 */
+/* 注：此片段需在无 #include <wctype.h> 的翻译单元中测试。 */
+
+#endif

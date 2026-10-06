@@ -1,0 +1,174 @@
+=== TEXT ===
+The towlower function
+Synopsis:
+[1] #include <wctype.h> wint_t towlower(wint_t wc);
+Description:
+[2] The towlower function converts an uppercase letter to a corresponding lowercase letter.
+Returns:
+[3] If the argument is a wide character for which iswupper is true and there are one or more corresponding wide characters, as specified by the current locale, for which iswlower is true, the towlower function returns one of the corresponding wide characters (always the same one for any given locale); otherwise, the argument is returned unchanged.
+
+=== CODE ===
+/*
+ * 测试条款：C99 7.25.3.1.1 —— towlower 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，调用 towlower，验证：
+ *     [1] 原型 wint_t towlower(wint_t wc);
+ *     [2] 大写字母转换为对应小写字母；
+ *     [3] 若参数是 iswupper 为真且存在对应小写宽字符，返回其中之一
+ *         （同一 locale 下始终相同）；否则原样返回。
+ *   负向测试：违反约束的代码应编译报错（见文件末尾 #if 0 块）。
+ *
+ * 编译：gcc -std=c99 -Wall -Wextra towlower_test.c -o towlower_test
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与 wint_t (*)(wint_t) 兼容 */
+static wint_t (*fp_towlower)(wint_t) = towlower;
+
+int main(void)
+{
+    /* 使用 C locale，保证行为可预测 */
+    setlocale(LC_ALL, "C");
+
+    /* [1] 原型：返回类型为 wint_t，参数类型为 wint_t */
+    {
+        wint_t wc = L'A';
+        wint_t r  = towlower(wc);
+        assert(r == L'a');
+        /* 通过函数指针调用，验证签名 */
+        assert(fp_towlower(L'B') == L'b');
+    }
+
+    /* [2] 大写字母 -> 对应小写字母（ASCII 范围） */
+    {
+        int i;
+        for (i = L'A'; i <= L'Z'; ++i) {
+            wint_t up = (wint_t)i;
+            wint_t lo = towlower(up);
+            assert(iswupper(up));
+            assert(iswlower(lo));
+            assert(lo == (wint_t)(i - L'A' + L'a'));
+        }
+    }
+
+    /* [3] 已经是小写字母：原样返回 */
+    {
+        int i;
+        for (i = L'a'; i <= L'z'; ++i) {
+            wint_t lo = (wint_t)i;
+            assert(towlower(lo) == lo);
+        }
+    }
+
+    /* [3] 非字母宽字符：原样返回 */
+    {
+        assert(towlower(L'0') == L'0');
+        assert(towlower(L' ') == L' ');
+        assert(towlower(L'!') == L'!');
+        assert(towlower(L'\n') == L'\n');
+        assert(towlower(L'\t') == L'\t');
+    }
+
+    /* [3] 非 iswupper 的宽字符（如数字、标点）原样返回 */
+    {
+        wint_t wc = L'#';
+        assert(!iswupper(wc));
+        assert(towlower(wc) == wc);
+    }
+
+    /* [3] 同一 locale 下结果稳定：多次调用返回相同值 */
+    {
+        wint_t a = towlower(L'Q');
+        wint_t b = towlower(L'Q');
+        wint_t c = towlower(L'Q');
+        assert(a == b && b == c);
+        assert(a == L'q');
+    }
+
+    /* [3] 与 iswupper/iswlower 配合：若 iswupper(wc) 为真，
+     *     则 towlower(wc) 要么等于 wc（无对应小写），
+     *     要么 iswlower(towlower(wc)) 为真。 */
+    {
+        wint_t samples[] = { L'A', L'Z', L'a', L'z', L'0', L'9',
+                             L' ', L'~', L'\0', (wint_t)0x00C0 /* À */ };
+        size_t k;
+        for (k = 0; k < sizeof(samples)/sizeof(samples[0]); ++k) {
+            wint_t wc = samples[k];
+            wint_t lo = towlower(wc);
+            if (iswupper(wc)) {
+                assert(lo == wc || iswlower(lo));
+            } else {
+                assert(lo == wc);
+            }
+        }
+    }
+
+    /* [3] WEOF 处理：WEOF 不是 iswupper 为真的字符，应原样返回 */
+    {
+        assert(towlower(WEOF) == WEOF);
+    }
+
+    /* [2][3] 幂等性：towlower(towlower(x)) == towlower(x) */
+    {
+        wint_t samples[] = { L'A', L'B', L'Y', L'Z', L'a', L'0', L'?' };
+        size_t k;
+        for (k = 0; k < sizeof(samples)/sizeof(samples[0]); ++k) {
+            wint_t once  = towlower(samples[k]);
+            wint_t twice = towlower(once);
+            assert(once == twice);
+        }
+    }
+
+    printf("towlower: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「调用 towlower 必须提供恰好一个 wint_t 类型实参」：
+ * 参数个数错误，gcc -std=c99 应报错（too few arguments）。 */
+#include <wctype.h>
+void bad_argc(void) {
+    wint_t r = towlower();          /* 缺少实参 */
+    (void)r;
+}
+
+/* 违反约束「调用 towlower 必须提供恰好一个 wint_t 类型实参」：
+ * 参数过多，gcc -std=c99 应报错（too many arguments）。 */
+void bad_argc2(void) {
+    wint_t r = towlower(L'A', L'B'); /* 实参过多 */
+    (void)r;
+}
+
+/* 违反约束「towlower 的返回类型为 wint_t，不可作为左值赋值」：
+ * 函数调用结果不是左值，对其赋值应编译报错。 */
+void bad_lvalue(void) {
+    towlower(L'A') = L'b';          /* 非左值赋值 */
+}
+
+/* 违反约束「towlower 的返回类型为 wint_t，不可取地址」：
+ * 函数调用结果不是左值，取地址应编译报错。 */
+void bad_addr(void) {
+    wint_t *p = &towlower(L'A');    /* 非左值取地址 */
+    (void)p;
+}
+
+/* 违反约束「towlower 声明于 <wctype.h>，未包含头文件时无原型」：
+ * 在 C99 中隐式函数声明是约束违反，gcc -std=c99 应报错
+ * （implicit declaration of function 'towlower'）。 */
+void bad_no_header(void) {
+    /* 故意不包含 <wctype.h> */
+    wint_t r = towlower(L'A');
+    (void)r;
+}
+
+#endif /* 负向测试结束 */

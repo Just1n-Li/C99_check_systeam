@@ -1,0 +1,204 @@
+=== ARTICLE 7.21.5.3 ===
+--- TEXT ---
+The strcspn function
+Synopsis:
+[1] #include <string.h> size_t strcspn(const char *s1, const char *s2);
+Description:
+[2] The strcspn function computes the length of the maximum initial segment of the string pointed to by s1 which consists entirely of characters not from the string pointed to by s2.
+Returns:
+[3] The strcspn function returns the length of the segment.
+--- CODE ---
+/*
+ * 测试 C99 7.21.5.3 —— strcspn 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <string.h>，调用 strcspn，验证其语义（返回 s1 中
+ *             完全由「不属于 s2 的字符」构成的最大初始段的长度），
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中），期望编译器报错。
+ *
+ * 条款结构：
+ *   [1] 概要：size_t strcspn(const char *s1, const char *s2);
+ *   [2] 描述：计算 s1 指向字符串中「完全由不属于 s2 的字符构成」的
+ *             最大初始段的长度。
+ *   [3] 返回值：返回该段的长度。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 概要：验证函数可被声明/调用，返回类型为 size_t */
+static void test_synopsis(void)
+{
+    /* 通过函数指针验证原型：size_t (*)(const char *, const char *) */
+    size_t (*fp)(const char *, const char *) = strcspn;
+    size_t r = fp("abc", "xyz");
+    assert(r == 3);            /* 无交集，整串都是初始段 */
+    printf("[1] synopsis / function pointer OK\n");
+}
+
+/* [2] 描述 + [3] 返回值：基本语义 —— 初始段长度 */
+static void test_basic(void)
+{
+    /* s1 = "hello world"，s2 = " "（空格）
+     * 初始段 "hello" 全部不是空格，长度 5 */
+    assert(strcspn("hello world", " ") == 5);
+
+    /* s1 = "abcde"，s2 = "c"：初始段 "ab"，长度 2 */
+    assert(strcspn("abcde", "c") == 2);
+
+    /* s1 = "abcde"，s2 = "a"：首字符即属于 s2，初始段为空，长度 0 */
+    assert(strcspn("abcde", "a") == 0);
+
+    printf("[2][3] basic semantics OK\n");
+}
+
+/* [2] 描述：s2 中任意一个字符都会终止初始段（集合语义，而非子串） */
+static void test_set_semantics(void)
+{
+    /* s2 = "xyz" 是字符集合；s1 中遇到 'x'、'y' 或 'z' 任一即停 */
+    assert(strcspn("abcdef", "xyz") == 6);   /* 无交集 */
+    assert(strcspn("abcxdef", "xyz") == 3);  /* 遇到 'x' 停 */
+    assert(strcspn("abcydef", "xyz") == 3);  /* 遇到 'y' 停 */
+    assert(strcspn("abczdef", "xyz") == 3);  /* 遇到 'z' 停 */
+
+    /* s2 顺序无关 */
+    assert(strcspn("abczdef", "zyx") == 3);
+
+    printf("[2] set semantics OK\n");
+}
+
+/* [2] 描述：s2 为空字符串时，没有任何字符属于 s2，整串都是初始段 */
+static void test_empty_s2(void)
+{
+    assert(strcspn("hello", "") == 5);
+    assert(strcspn("", "") == 0);
+    printf("[2] empty s2 OK\n");
+}
+
+/* [2] 描述：s1 为空字符串时，初始段长度为 0 */
+static void test_empty_s1(void)
+{
+    assert(strcspn("", "abc") == 0);
+    printf("[2] empty s1 OK\n");
+}
+
+/* [2] 描述：s1 全部字符都属于 s2 时，返回 0 */
+static void test_all_in_s2(void)
+{
+    assert(strcspn("aaa", "a") == 0);
+    assert(strcspn("abc", "cba") == 0);
+    printf("[2] all chars in s2 OK\n");
+}
+
+/* [2] 描述：s1 全部字符都不属于 s2 时，返回 strlen(s1) */
+static void test_none_in_s2(void)
+{
+    const char *s1 = "abcdefgh";
+    assert(strcspn(s1, "XYZ") == strlen(s1));
+    printf("[2] no chars in s2 OK\n");
+}
+
+/* [2] 描述：s2 中含重复字符不影响结果 */
+static void test_duplicate_in_s2(void)
+{
+    assert(strcspn("abcde", "ccccc") == 2);
+    assert(strcspn("abcde", "cbcbcb") == 2);
+    printf("[2] duplicate chars in s2 OK\n");
+}
+
+/* [2] 描述：s2 中含 '\0' 之外的任意字符（含空白、标点、数字） */
+static void test_various_chars(void)
+{
+    assert(strcspn("abc\tdef", "\t") == 3);   /* 制表符 */
+    assert(strcspn("abc\ndef", "\n") == 3);   /* 换行符 */
+    assert(strcspn("12,34", ",") == 2);       /* 标点 */
+    assert(strcspn("12,34", "0123456789") == 0); /* 数字集合 */
+    printf("[2] various chars OK\n");
+}
+
+/* [3] 返回值：类型为 size_t，且等于初始段长度 */
+static void test_return_type(void)
+{
+    size_t r = strcspn("hello world", " ");
+    /* 与手工计算的初始段长度比较 */
+    const char *p = "hello world";
+    size_t manual = 0;
+    while (p[manual] != '\0' && p[manual] != ' ')
+        manual++;
+    assert(r == manual);
+    assert(r == 5);
+    printf("[3] return type/value OK\n");
+}
+
+/* [2] 描述：s1 与 s2 指向同一字符串时的行为（合法输入） */
+static void test_same_string(void)
+{
+    /* s1 == s2 == "abc"：首字符 'a' 属于 s2，返回 0 */
+    const char *s = "abc";
+    assert(strcspn(s, s) == 0);
+    printf("[2] same string OK\n");
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_basic();
+    test_set_semantics();
+    test_empty_s2();
+    test_empty_s1();
+    test_all_in_s2();
+    test_none_in_s2();
+    test_duplicate_in_s2();
+    test_various_chars();
+    test_return_type();
+    test_same_string();
+
+    printf("\nAll positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 概要要求两个参数均为 const char *」：
+ * 传入 int 实参，gcc -std=c99 应报 incompatible type / 参数类型不匹配。 */
+#include <string.h>
+void bad_arg_type(void)
+{
+    int x = 1;
+    size_t r = strcspn(x, "abc");   /* 期望报错：int 不能转换为 const char * */
+    (void)r;
+}
+
+/* 违反约束「[1] 概要要求恰好两个参数」：
+ * 参数个数不匹配，gcc -std=c99 应报 too few / too many arguments。 */
+void bad_arg_count(void)
+{
+    size_t r1 = strcspn("abc");            /* 期望报错：参数太少 */
+    size_t r2 = strcspn("abc", "a", "b");  /* 期望报错：参数太多 */
+    (void)r1; (void)r2;
+}
+
+/* 违反约束「[1] 概要要求返回 size_t，调用处若声明为不兼容类型」：
+ * 使用不兼容的函数指针类型调用，gcc -std=c99 应报 incompatible pointer type。 */
+void bad_return_use(void)
+{
+    int (*fp)(const char *, const char *) = strcspn; /* 期望报错：返回类型不兼容 */
+    (void)fp;
+}
+
+/* 违反约束「[1] 概要要求包含 <string.h> 才能获得原型」：
+ * 未包含头文件而直接调用，在 C99 中隐式声明被禁止，
+ * gcc -std=c99 应报 implicit declaration of function 'strcspn'。 */
+void bad_no_prototype(void)
+{
+    /* 注意：本片段故意不 #include <string.h> */
+    size_t r = strcspn("abc", "b");  /* 期望报错：隐式声明 */
+    (void)r;
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,204 @@
+=== TEXT ===
+The getchar function
+Synopsis:
+[1] #include <stdio.h> int getchar(void);
+Description:
+[2] The getchar function is equivalent to getc with the argument stdin.
+Returns:
+[3] The getchar function returns the next character from the input stream pointed to by stdin. If the stream is at end-of-file, the end-of-file indicator for the stream is set and getchar returns EOF. If a read error occurs, the error indicator for the stream is set and getchar returns EOF.
+=== CODE ===
+/*
+ * 测试 C99 7.19.7.6 —— getchar 函数
+ *
+ * 预期行为：
+ *   正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应被编译器拒绝（编译报错）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int getchar(void);  需要 <stdio.h>
+ *   [2] 语义：getchar() 等价于 getc(stdin)
+ *   [3] 返回：返回 stdin 的下一个字符；EOF 时设置文件结束指示符并返回 EOF；
+ *             读错误时设置错误指示符并返回 EOF。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：getchar 接受 void 参数，返回 int。
+ *     用函数指针类型来静态验证原型签名。 */
+static int (*getchar_proto_check)(void) = getchar;
+
+/* [2] getchar() 等价于 getc(stdin)：用重定向的输入流验证两者行为一致。
+ *     这里通过比较“从同一输入读取”的结果来间接验证等价性。 */
+static void test_equivalence_with_getc(void)
+{
+    /* 无法在运行时直接比较两个函数，但可以验证：
+     * getchar() 从 stdin 读取，与 getc(stdin) 读取同一流的结果一致。
+     * 使用 freopen 将 stdin 重定向到临时文件。 */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    /* 写入测试数据 */
+    fputs("AB", fp);
+    rewind(fp);
+
+    /* 将 stdin 重定向到该文件 */
+    FILE *old_stdin = stdin;
+    stdin = fp;
+
+    int c1 = getchar();          /* 应读到 'A' */
+    int c2 = getc(stdin);        /* 应读到 'B'，与 getchar 读同一流 */
+    assert(c1 == 'A');
+    assert(c2 == 'B');
+
+    /* 恢复 stdin */
+    stdin = old_stdin;
+    fclose(fp);
+}
+
+/* [3] 正常读取：getchar 返回下一个字符（以 unsigned char 转换为 int） */
+static void test_normal_read(void)
+{
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    /* 写入包含高位字节的字符，验证返回值为 unsigned char 转换后的 int */
+    fputc('X', fp);
+    fputc(0xFF, fp);   /* 高位字节 */
+    rewind(fp);
+
+    FILE *old_stdin = stdin;
+    stdin = fp;
+
+    int c1 = getchar();
+    int c2 = getchar();
+    assert(c1 == 'X');
+    /* 0xFF 作为 unsigned char 转换为 int 应为 255，而不是 -1 */
+    assert(c2 == 0xFF);
+    assert(c2 != EOF);
+
+    stdin = old_stdin;
+    fclose(fp);
+}
+
+/* [3] EOF：流到达文件末尾时，设置文件结束指示符并返回 EOF */
+static void test_eof(void)
+{
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    /* 空文件，立即处于 EOF */
+    rewind(fp);
+
+    FILE *old_stdin = stdin;
+    stdin = fp;
+
+    /* 读取前文件结束指示符未设置 */
+    assert(feof(stdin) == 0);
+
+    int c = getchar();
+    assert(c == EOF);
+    /* 文件结束指示符应被设置 */
+    assert(feof(stdin) != 0);
+
+    /* 再次读取仍返回 EOF */
+    int c2 = getchar();
+    assert(c2 == EOF);
+
+    stdin = old_stdin;
+    fclose(fp);
+}
+
+/* [3] 读错误：发生读错误时，设置错误指示符并返回 EOF。
+ *     用只写模式打开的文件作为 stdin 来触发读错误。 */
+static void test_read_error(void)
+{
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    /* 以只写方式重新打开同一文件，使读取失败 */
+    FILE *wfp = freopen(NULL, "w", fp);
+    if (wfp == NULL) {
+        /* 某些实现不支持 freopen(NULL,...)，跳过此测试 */
+        fclose(fp);
+        return;
+    }
+
+    FILE *old_stdin = stdin;
+    stdin = wfp;
+
+    /* 清除错误指示符 */
+    clearerr(stdin);
+    assert(ferror(stdin) == 0);
+
+    int c = getchar();
+    /* 读错误时应返回 EOF 并设置错误指示符 */
+    assert(c == EOF);
+    assert(ferror(stdin) != 0);
+
+    stdin = old_stdin;
+    fclose(wfp);
+}
+
+int main(void)
+{
+    /* [1] 原型签名验证 */
+    assert(getchar_proto_check == getchar);
+
+    /* [2] 与 getc(stdin) 等价 */
+    test_equivalence_with_getc();
+
+    /* [3] 正常读取 */
+    test_normal_read();
+
+    /* [3] EOF 行为 */
+    test_eof();
+
+    /* [3] 读错误行为 */
+    test_read_error();
+
+    printf("C99 7.19.7.6 getchar: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+
+#if 0
+
+/* 违反约束「getchar 的原型为 int getchar(void)」：
+ * 调用时传入实参，与 void 参数列表不符，gcc -std=c99 应报错
+ * （"too many arguments to function 'getchar'"）。 */
+void negative_wrong_arg_count(void)
+{
+    int c = getchar(42);   /* 错误：getchar 不接受参数 */
+    (void)c;
+}
+
+/* 违反约束「getchar 返回 int」：
+ * 将 getchar 的返回值当作函数指针调用，类型不匹配，应报错。 */
+void negative_wrong_return_use(void)
+{
+    getchar()();   /* 错误：int 不是函数，不能调用 */
+}
+
+/* 违反约束「getchar 需要 <stdio.h> 中的声明」：
+ * 若未包含 <stdio.h>，在 C99 中隐式函数声明是约束违反，
+ * 编译器应报错（"implicit declaration of function 'getchar'"）。
+ * 注意：本文件已包含 <stdio.h>，此处仅示意。 */
+void negative_no_declaration(void)
+{
+    /* 假设此处没有 #include <stdio.h> */
+    /* int c = getchar(); */   /* 错误：隐式声明 */
+}
+
+/* 违反约束「getchar 的参数列表为 void」：
+ * 取 getchar 的地址赋给不兼容的函数指针类型，应报错。 */
+void negative_incompatible_ptr(void)
+{
+    int (*p)(int) = getchar;   /* 错误：int(*)(void) 与 int(*)(int) 不兼容 */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

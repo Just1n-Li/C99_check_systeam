@@ -1,0 +1,176 @@
+=== ARTICLE 7.21.5.4 ===
+--- TEXT ---
+The strpbrk function
+Synopsis:
+[1] #include <string.h> char *strpbrk(const char *s1, const char *s2);
+Description:
+[2] The strpbrk function locates the first occurrence in the string pointed to by s1 of any character from the string pointed to by s2.
+Returns:
+[3] The strpbrk function returns a pointer to the character, or a null pointer if no character from s2 occurs in s1.
+--- CODE ---
+/*
+ * 测试 C99 7.21.5.4 —— strpbrk 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 条款要点：
+ *   [1] 原型：char *strpbrk(const char *s1, const char *s2);  需 <string.h>
+ *   [2] 语义：定位 s1 中第一个属于 s2 中任意字符的字符
+ *   [3] 返回：指向该字符的指针；若 s2 中无字符出现在 s1 中，返回空指针
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型与头文件：声明存在，返回类型为 char *，参数为 const char * */
+static char *(*fp)(const char *, const char *) = strpbrk;
+
+int main(void)
+{
+    /* [1] 通过函数指针调用，验证原型签名匹配 */
+    {
+        char *r = fp("hello", "lo");
+        assert(r != NULL);
+        assert(*r == 'l');
+    }
+
+    /* [2] 定位 s1 中第一个属于 s2 的字符 */
+    {
+        const char *s1 = "hello world";
+        const char *s2 = "aeiou";
+        char *r = strpbrk(s1, s2);
+        assert(r != NULL);
+        assert(r == s1 + 1);   /* 'e' 是第一个元音 */
+        assert(*r == 'e');
+    }
+
+    /* [2] s2 中字符出现在 s1 开头 */
+    {
+        const char *s1 = "abcdef";
+        const char *s2 = "ax";
+        char *r = strpbrk(s1, s2);
+        assert(r == s1);
+        assert(*r == 'a');
+    }
+
+    /* [2] s2 中字符出现在 s1 结尾 */
+    {
+        const char *s1 = "abcdef";
+        const char *s2 = "zf";
+        char *r = strpbrk(s1, s2);
+        assert(r == s1 + 5);
+        assert(*r == 'f');
+    }
+
+    /* [2] s2 含多个字符，返回 s1 中最早出现的那个 */
+    {
+        const char *s1 = "the quick brown fox";
+        const char *s2 = "xyzq";
+        char *r = strpbrk(s1, s2);
+        assert(r != NULL);
+        assert(*r == 'q');     /* 'q' 比 'x'/'y'/'z' 更早出现 */
+    }
+
+    /* [3] 无匹配时返回空指针 */
+    {
+        const char *s1 = "hello";
+        const char *s2 = "xyz";
+        char *r = strpbrk(s1, s2);
+        assert(r == NULL);
+    }
+
+    /* [3] s2 为空字符串时，无任何字符可匹配，返回空指针 */
+    {
+        const char *s1 = "hello";
+        const char *s2 = "";
+        char *r = strpbrk(s1, s2);
+        assert(r == NULL);
+    }
+
+    /* [3] s1 为空字符串时，无字符可匹配，返回空指针 */
+    {
+        const char *s1 = "";
+        const char *s2 = "abc";
+        char *r = strpbrk(s1, s2);
+        assert(r == NULL);
+    }
+
+    /* [3] s1 与 s2 均为空字符串，返回空指针 */
+    {
+        char *r = strpbrk("", "");
+        assert(r == NULL);
+    }
+
+    /* [2][3] 返回的指针可用于修改（s1 为可写数组时） */
+    {
+        char buf[] = "hello";
+        char *r = strpbrk(buf, "lo");
+        assert(r == buf + 2);
+        *r = 'L';
+        assert(strcmp(buf, "heLlo") == 0);
+    }
+
+    /* [2] 返回指针指向 s1 内部（同一字符串） */
+    {
+        const char *s1 = "abcdef";
+        char *r = strpbrk(s1, "cd");
+        assert(r == s1 + 2);
+    }
+
+    printf("All positive tests for C99 7.21.5.4 strpbrk passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「strpbrk 的参数类型为 const char *」：
+ * 传入 int 实参，gcc -std=c99 应报错（参数类型不兼容 / 指针与整数比较）。 */
+{
+    int x = 0;
+    char *r = strpbrk(x, "abc");   /* 期望：编译报错 */
+    (void)r;
+}
+
+/* 违反约束「strpbrk 的参数类型为 const char *」：
+ * 传入 double 实参，gcc -std=c99 应报错。 */
+{
+    double d = 0.0;
+    char *r = strpbrk("abc", d);   /* 期望：编译报错 */
+    (void)r;
+}
+
+/* 违反约束「strpbrk 返回 char *，不能赋给不兼容的指针类型」：
+ * 将 char * 赋给 int *，gcc -std=c99 应报错（不兼容指针赋值）。 */
+{
+    int *p = strpbrk("abc", "b");  /* 期望：编译报错 */
+    (void)p;
+}
+
+/* 违反约束「strpbrk 需要两个参数」：
+ * 只传一个实参，gcc -std=c99 应报错（实参数量不匹配）。 */
+{
+    char *r = strpbrk("abc");      /* 期望：编译报错 */
+    (void)r;
+}
+
+/* 违反约束「strpbrk 需要两个参数」：
+ * 传三个实参，gcc -std=c99 应报错（实参数量不匹配）。 */
+{
+    char *r = strpbrk("abc", "b", "c");  /* 期望：编译报错 */
+    (void)r;
+}
+
+/* 违反约束「strpbrk 返回 char *，不能对非左值结果赋值」：
+ * 函数调用结果不是左值，对其赋值应编译报错。 */
+{
+    strpbrk("abc", "b") = 0;       /* 期望：编译报错（非左值赋值） */
+}
+
+#endif

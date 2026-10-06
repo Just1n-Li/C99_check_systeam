@@ -1,0 +1,197 @@
+ARTICLE: 6.2.5
+
+TEXT:
+Types
+[1] The meaning of a value stored in an object or returned by a function is determined by the type of the expression used to access it. (An identifier declared to be an object is the simplest such expression; the type is specified in the declaration of the identifier.) Types are partitioned into object types (types that fully describe objects), function types (types that describe functions), and incomplete types (types that describe objects but lack information needed to determine their sizes).
+[2] An object declared as type _Bool is large enough to store the values 0 and 1.
+[3] An object declared as type char is large enough to store any member of the basic execution character set. If a member of the basic execution character set is stored in a char object, its value is guaranteed to be nonnegative. If any other character is stored in a char object, the resulting value is implementation-defined but shall be within the range of values that can be represented in that type.
+[4] There are five standard signed integer types, designated as signed char, short int, int, long int, and long long int. (These and other types may be designated in several additional ways, as described in 6.7.2.) There may also be implementation-defined extended signed integer types. The standard and extended signed integer types are collectively called signed integer types.
+[5] An object declared as type signed char occupies the same amount of storage as a ''plain'' char object. A ''plain'' int object has the natural size suggested by the architecture of the execution environment (large enough to contain any value in the range INT_MIN to INT_MAX as defined in the header <limits.h>).
+[6] For each of the signed integer types, there is a corresponding (but different) unsigned integer type (designated with the keyword unsigned) that uses the same amount of storage (including sign information) and has the same alignment requirements. The type _Bool and the unsigned integer types that correspond to the standard signed integer types are the standard unsigned integer types. The unsigned integer types that correspond to the extended signed integer types are the extended unsigned integer types. The standard and extended unsigned integer types are collectively called unsigned integer types.
+[7] The standard signed integer types and standard unsigned integer types are collectively called the standard integer types, the extended signed integer types and extended unsigned integer types are collectively called the extended integer types.
+[8] For any two integer types with the same signedness and different integer conversion rank (see 6.3.1.1), the range of values of the type with smaller integer conversion rank is a subrange of the values of the other type.
+[9] The range of nonnegative values of a signed integer type is a subrange of the corresponding unsigned integer type, and the representation of the same value in each type is the same. A computation involving unsigned operands can never overflow, because a result that cannot be represented by the resulting unsigned integer type is reduced modulo the number that is one greater than the largest value that can be represented by the resulting type.
+[10] There are three real floating types, designated as float, double, and long double. The set of values of the type float is a subset of the set of values of the type double; the set of values of the type double is a subset of the set of values of the type long double.
+[11] There are three complex types, designated as float _Complex, double _Complex, and long double _Complex. The real floating and complex types are collectively called the floating types.
+[12] For each floating type there is a corresponding real type, which is always a real floating type. For real floating types, it is the same type. For complex types, it is the type given by deleting the keyword _Complex from the type name.
+[13] Each complex type has the same representation and alignment requirements as an array type containing exactly two elements of the corresponding real type; the first element is equal to the real part, and the second element to the imaginary part, of the complex number.
+[14] The type char, the signed and unsigned integer types, and the floating types are collectively called the basic types. Even if the implementation defines two or more basic types to have the same representation, they are nevertheless different types.
+[15] The three types char, signed char, and unsigned char are collectively called the character types. The implementation shall define char to have the same range, representation, and behavior as either signed char or unsigned char.
+[16] An enumeration comprises a set of named integer constant values. Each distinct enumeration constitutes a different enumerated type.
+[17] The type char, the signed and unsigned integer types, and the enumerated types are collectively called integer types. The integer and real floating types are collectively called real types.
+[18] Integer and floating types are collectively called arithmetic types. Each arithmetic type belongs to one type domain: the real type domain comprises the real types, the complex type domain comprises the complex types.
+[19] The void type comprises an empty set of values; it is an incomplete type that cannot be completed.
+[20] Any number of derived types can be constructed from the object, function, and incomplete types, as follows: An array type describes a contiguously allocated nonempty set of objects with a particular member object type, called the element type. Array types are characterized by their element type and by the number of elements in the array. An array type is said to be derived from its element type, and if its element type is T , the array type is sometimes called ''array of T ''. The construction of an array type from an element type is called ''array type derivation''. A structure type describes a sequentially allocated nonempty set of member objects (and, in certain circumstances, an incomplete array), each of which has an optionally specified name and possibly distinct type. A union type describes an overlapping nonempty set of member objects, each of which has an optionally specified name and possibly distinct type. A function type describes a function with specified return type. A function type is characterized by its return type and the number and types of its parameters. A function type is said to be derived from its return type, and if its return type is T , the function type is sometimes called ''function returning T ''. The construction of a function type from a return type is called ''function type derivation''. A pointer type may be derived from a function type, an object type, or an incomplete type, called the referenced type. A pointer type describes an object whose value provides a reference to an entity of the referenced type. A pointer type derived from the referenced type T is sometimes called ''pointer to T ''. The construction of a pointer type from a referenced type is called ''pointer type derivation''. These methods of constructing derived types can be applied recursively.
+[21] Arithmetic types and pointer types are collectively called scalar types. Array and structure types are collectively called aggregate types.
+[22] An array type of unknown size is an incomplete type. It is completed, for an identifier of that type, by specifying the size in a later declaration (with internal or external linkage). A structure or union type of unknown content (as described in 6.7.2.3) is an incomplete type. It is completed, for all declarations of that type, by declaring the same structure or union tag with its defining content later in the same scope.
+[23] A type has known constant size if the type is not incomplete and is not a variable length array type.
+[24] Array, function, and pointer types are collectively called derived declarator types. A declarator type derivation from a type T is the construction of a derived declarator type from T by the application of an array-type, a function-type, or a pointer-type derivation to T.
+[25] A type is characterized by its type category, which is either the outermost derivation of a derived type (as noted above in the construction of derived types), or the type itself if the type consists of no derived types.
+[26] Any type so far mentioned is an unqualified type. Each unqualified type has several qualified versions of its type, corresponding to the combinations of one, two, or all three of the const, volatile, and restrict qualifiers. The qualified or unqualified versions of a type are distinct types that belong to the same type category and have the same representation and alignment requirements. A derived type is not qualified by the qualifiers (if any) of the type from which it is derived.
+[27] A pointer to void shall have the same representation and alignment requirements as a pointer to a character type. Similarly, pointers to qualified or unqualified versions of compatible types shall have the same representation and alignment requirements. All pointers to structure types shall have the same representation and alignment requirements as each other. All pointers to union types shall have the same representation and alignment requirements as each other. Pointers to other types need not have the same representation or alignment requirements.
+[28] EXAMPLE 1 The type designated as ''float *'' has type ''pointer to float''. Its type category is pointer, not a floating type. The const-qualified version of this type is designated as ''float * const'' whereas the type designated as ''const float *'' is not a qualified type -- its type is ''pointer to const- qualified float'' and is a pointer to a qualified type.
+[29] EXAMPLE 2 The type designated as ''struct tag (*[5])(float)'' has type ''array of pointer to function returning struct tag''. The array has length five and the function has a single parameter of type float. Its type category is array.
+Forward references: compatible type and composite type (6.2.7), declarations (6.7).
+Footnotes:
+28) Implementation-defined keywords shall have the form of an identifier reserved for any use as described in 7.1.3.
+29) Therefore, any statement in this Standard about signed integer types also applies to the extended signed integer types.
+30) Therefore, any statement in this Standard about unsigned integer types also applies to the extended unsigned integer types.
+31) The same representation and alignment requirements are meant to imply interchangeability as arguments to functions, return values from functions, and members of unions.
+32) See ''future language directions'' (6.11.1).
+33) A specification for imaginary types is in informative annex G.
+34) An implementation may define new keywords that provide alternative ways to designate a basic (or any other) type; this does not violate the requirement that all basic types be different. Implementation-defined keywords shall have the form of an identifier reserved for any use as described in 7.1.3.
+35) CHAR_MIN, defined in <limits.h>, will have one of the values 0 or SCHAR_MIN, and this can be used to distinguish the two options. Irrespective of the choice made, char is a separate type from the other two and is not compatible with either.
+36) Since object types do not include incomplete types, an array of incomplete type cannot be constructed.
+37) Note that aggregate type does not include union type because an object with union type can only contain one member at a time.
+38) See 6.7.3 regarding qualified array and function types.
+39) The same representation and alignment requirements are meant to imply interchangeability as arguments to functions, return values from functions, and members of unions.
+
+CODE:
+/*
+ * 验证 C99 条款 6.2.5 (Types)
+ * 预期行为：
+ * 正向测试：能正常编译并运行通过，所有 assert 成立。
+ * 负向测试：违反约束，应编译报错。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <limits.h>
+#include <complex.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 类型分为对象类型、函数类型和不完整类型 */
+struct Incomplete; /* 不完整类型 */
+void func_type(void); /* 函数类型 */
+int obj_type; /* 对象类型 */
+
+void test_paragraph_1_to_5(void) {
+    /* [2] _Bool 足够存储 0 和 1 */
+    _Bool b = 1;
+    assert(b == 1);
+
+    /* [3] char 足够存储基本执行字符集，且基本字符非负 */
+    char c = 'A';
+    assert(c >= 0);
+
+    /* [4] 五种标准有符号整型 */
+    signed char sc;
+    short int si;
+    int i;
+    long int li;
+    long long int lli;
+    (void)sc; (void)si; (void)i; (void)li; (void)lli;
+
+    /* [5] signed char 与 char 占用相同存储 */
+    assert(sizeof(signed char) == sizeof(char));
+}
+
+void test_paragraph_6_to_9(void) {
+    /* [6] 对应的无符号整型占用相同存储 */
+    assert(sizeof(unsigned char) == sizeof(signed char));
+    assert(sizeof(unsigned short) == sizeof(short int));
+    assert(sizeof(unsigned int) == sizeof(int));
+    assert(sizeof(unsigned long) == sizeof(long int));
+    assert(sizeof(unsigned long long) == sizeof(long long int));
+
+    /* [8] 较小转换等级的范围是较大转换等级的子集 */
+    assert(INT_MIN >= LONG_MIN && INT_MAX <= LONG_MAX);
+
+    /* [9] 无符号运算不会溢出，结果取模 */
+    unsigned int ui = UINT_MAX;
+    ui = ui + 1;
+    assert(ui == 0);
+}
+
+void test_paragraph_10_to_13(void) {
+    /* [10] 三种实浮点类型 */
+    float f;
+    double d;
+    long double ld;
+    (void)f; (void)d; (void)ld;
+
+    /* [11] 三种复数类型 */
+    float _Complex fc;
+    double _Complex dc;
+    long double _Complex ldc;
+    (void)fc; (void)dc; (void)ldc;
+
+    /* [12][13] 复数类型与对应实类型具有相同的表示和对齐要求，等同于两个实类型元素的数组 */
+    assert(sizeof(float _Complex) == 2 * sizeof(float));
+    assert(sizeof(double _Complex) == 2 * sizeof(double));
+    assert(sizeof(long double _Complex) == 2 * sizeof(long double));
+}
+
+void test_paragraph_14_to_18(void) {
+    /* [14] 基本类型即使表示相同，也是不同类型 (通过指针不兼容赋值在负向测试中验证) */
+    
+    /* [15] char 具有与 signed char 或 unsigned char 相同的范围和行为 */
+    #if CHAR_MIN < 0
+        assert(CHAR_MIN == SCHAR_MIN);
+    #else
+        assert(CHAR_MIN == 0);
+    #endif
+
+    /* [16] 每个不同的枚举构成不同的枚举类型 */
+    enum E1 { A1 } e1;
+    enum E2 { A2 } e2;
+    e1 = A1;
+    e2 = A2;
+    (void)e1; (void)e2;
+
+    /* [17] 整型和实浮点统称实类型 (编译通过即证明类型存在) */
+    int real_int = 0;
+    double real_dbl = 0.0;
+    (void)real_int; (void)real_dbl;
+
+    /* [18] 整型和浮点统称算术类型 (可进行算术运算) */
+    int ai = 1 + 2;
+    double ad = 1.0 + 2.0;
+    (void)ai; (void)ad;
+}
+
+void test_paragraph_19_to_20(void) {
+    /* [19] void 是不完整类型，不能被完成，但可用于函数返回 */
+    void v_func(void);
+    v_func();
+
+    /* [20] 派生类型：数组、结构体、联合体、函数、指针 */
+    int arr[3]; /* 数组类型 */
+    struct S { int x; } s; /* 结构体类型 */
+    union U { int x; } u; /* 联合体类型 */
+    void (*fp)(void) = NULL; /* 函数指针类型 */
+    int *ptr = NULL; /* 指针类型 */
+    
+    arr[0] = s.x = u.x = 0;
+    (void)fp; (void)ptr;
+}
+
+int main(void) {
+    test_paragraph_1_to_5();
+    test_paragraph_6_to_9();
+    test_paragraph_10_to_13();
+    test_paragraph_14_to_18();
+    test_paragraph_19_to_20();
+    
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* [1] 违反约束「不完整类型不能用于定义对象」：struct Incomplete 缺少定义，无法确定大小，gcc -std=c99 应报错 */
+struct Incomplete incomplete_obj;
+
+/* [14] 违反约束「不同类型即使表示相同也是不同类型」：int* 和 char* 是不同指针类型，不兼容赋值应报错 */
+int int_val = 0;
+char *char_ptr = &int_val;
+
+/* [19] 违反约束「void 是不完整类型且不能被完成」：不能声明 void 类型的对象，gcc -std=c99 应报错 */
+void void_obj;
+
+/* [20] 违反约束「数组元素类型必须是完整对象类型」：void 是不完整类型，不能作为数组元素，gcc -std=c99 应报错 */
+void void_arr[5];
+
+#endif

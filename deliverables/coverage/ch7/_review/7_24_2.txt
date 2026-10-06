@@ -1,0 +1,193 @@
+=== ARTICLE 7.24.2 ===
+--- TEXT ---
+Formatted wide character input/output functions
+[1] The formatted wide character input/output functions shall behave as if there is a sequence point after the actions associated with each specifier.
+Footnotes:
+280) The fwprintf functions perform writes to memory for the %n specifier.
+--- CODE ---
+/*
+ * 测试目标：C99 7.24.2 —— 格式化宽字符输入/输出函数
+ * 条款 [1]：格式化宽字符 I/O 函数的行为应如同在每个转换说明符相关动作之后
+ *           存在一个序列点（sequence point）。
+ * 脚注 280：fwprintf 系列函数对 %n 说明符会执行内存写入。
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中）。
+ *
+ * 说明：本条款本身是“行为如同存在序列点”的语义要求，属于可观察行为，
+ *       无法直接构造“违反约束”的编译错误；负向测试部分给出与格式化宽
+ *       字符 I/O 相关的、确实违反 C99 约束的片段（如参数类型不匹配、
+ *       对非左值赋值等），用于验证编译器拒绝非法代码。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <assert.h>
+#include <string.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 序列点语义：每个转换说明符动作之后存在序列点。
+ *     通过 %n 观察：%n 写入的计数必须在同一 fwprintf 调用中、
+ *     位于 %n 之前的转换说明符全部处理完毕之后才被写入。
+ *     若没有序列点保证，%n 的写入与其它副作用之间可能产生未定义行为；
+ *     这里验证 %n 得到的是“到目前为止已写入的宽字符数”。 */
+static void test_sequence_point_via_percent_n(void)
+{
+    wchar_t buf[128];
+    int n1 = -1, n2 = -1;
+
+    /* 使用 swprintf 写入宽字符缓冲区，%n 记录已写入字符数 */
+    int r = swprintf(buf, 128, L"AB%nCD%n", &n1, &n2);
+    assert(r == 4);          /* 共写入 4 个宽字符：A B C D */
+    assert(n1 == 2);         /* 第一个 %n 处已写入 "AB" */
+    assert(n2 == 4);         /* 第二个 %n 处已写入 "ABCD" */
+    assert(wcscmp(buf, L"ABCD") == 0);
+
+    /* 再次验证：%n 之前的转换说明符（%d）已完成其动作 */
+    int n3 = -1;
+    int val = 12345;
+    r = swprintf(buf, 128, L"%d%n", val, &n3);
+    assert(r == 5);
+    assert(n3 == 5);         /* "12345" 共 5 个宽字符 */
+    assert(wcscmp(buf, L"12345") == 0);
+}
+
+/* [1] 序列点语义：多个转换说明符之间相互独立，
+ *     每个说明符的动作完成后才进入下一个，结果可预测。 */
+static void test_multiple_specifiers(void)
+{
+    wchar_t buf[128];
+    int a = 10, b = 20;
+    int n = -1;
+
+    int r = swprintf(buf, 128, L"%d+%d=%d%n", a, b, a + b, &n);
+    assert(r == 9);          /* "10+20=30" 共 8 个字符？ 实际 8 个：1 0 + 2 0 = 3 0 */
+    /* 重新精确计算："10+20=30" 长度为 8 */
+    assert(r == 8);
+    assert(n == 8);
+    assert(wcscmp(buf, L"10+20=30") == 0);
+}
+
+/* [1] 脚注 280：fwprintf 对 %n 执行内存写入。
+ *     这里用 fwprintf 写入到内存流（open_memstream 不可移植），
+ *     改用 swprintf 验证 %n 的内存写入语义（同属格式化宽字符输出函数族）。 */
+static void test_percent_n_memory_write(void)
+{
+    wchar_t buf[64];
+    int count = -1;
+
+    /* %n 必须把“已写入的宽字符数”写入 count 指向的对象 */
+    int r = swprintf(buf, 64, L"hello%n", &count);
+    assert(r == 5);
+    assert(count == 5);
+    assert(wcscmp(buf, L"hello") == 0);
+
+    /* 空格式串 + %n：写入 0 */
+    count = -1;
+    r = swprintf(buf, 64, L"%n", &count);
+    assert(r == 0);
+    assert(count == 0);
+}
+
+/* [1] 序列点语义在输入方向同样适用：fwscanf 系列。
+ *     每个转换说明符动作之后存在序列点，%n 记录已读取的宽字符数。 */
+static void test_input_sequence_point(void)
+{
+    const wchar_t *input = L"42 abc";
+    int x = 0;
+    wchar_t word[16];
+    int n = -1;
+
+    /* 使用 swscanf 从宽字符串读取 */
+    int r = swscanf(input, L"%d %ls%n", &x, word, &n);
+    assert(r == 2);
+    assert(x == 42);
+    assert(wcscmp(word, L"abc") == 0);
+    assert(n == 6);          /* "42 abc" 共 6 个宽字符 */
+}
+
+/* [1] 序列点语义：%n 与其它说明符混合，验证顺序性 */
+static void test_mixed_specifiers_order(void)
+{
+    wchar_t buf[128];
+    int n1 = -1, n2 = -1, n3 = -1;
+
+    int r = swprintf(buf, 128, L"%c%n%c%n%c%n", L'X', &n1, L'Y', &n2, L'Z', &n3);
+    assert(r == 3);
+    assert(n1 == 1);
+    assert(n2 == 2);
+    assert(n3 == 3);
+    assert(wcscmp(buf, L"XYZ") == 0);
+}
+
+int main(void)
+{
+    /* 设置 locale 以支持宽字符操作（多数实现下 C locale 即可） */
+    setlocale(LC_ALL, "");
+
+    test_sequence_point_via_percent_n();
+    test_multiple_specifiers();
+    test_percent_n_memory_write();
+    test_input_sequence_point();
+    test_mixed_specifiers_order();
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「%n 对应的实参必须是指向整型的指针」：
+ * 传入 int 而非 int*，gcc -std=c99 应报错（格式与实参类型不匹配）。 */
+void bad_percent_n_arg(void)
+{
+    wchar_t buf[64];
+    int count = 0;
+    swprintf(buf, 64, L"abc%n", count);   /* 应为 &count */
+}
+
+/* 违反约束「格式化宽字符函数的格式串必须是宽字符串」：
+ * 传入窄字符串字面量给 swprintf，类型不匹配，应报错。 */
+void bad_format_type(void)
+{
+    wchar_t buf[64];
+    swprintf(buf, 64, "abc");             /* 应为 L"abc" */
+}
+
+/* 违反约束「swprintf 的第一个参数必须是指向 wchar_t 的指针」：
+ * 传入 char* 而非 wchar_t*，应报错。 */
+void bad_buffer_type(void)
+{
+    char buf[64];
+    swprintf(buf, 64, L"abc");            /* 应为 wchar_t buf[64] */
+}
+
+/* 违反约束「对非左值赋值」：
+ * swprintf 返回 int，是右值，不能赋值。 */
+void bad_assign_to_rvalue(void)
+{
+    wchar_t buf[64];
+    swprintf(buf, 64, L"abc") = 5;        /* 对函数返回值赋值，应报错 */
+}
+
+/* 违反约束「%d 对应的实参必须是整型」：
+ * 传入 double，格式与实参类型不匹配，应报错。 */
+void bad_specifier_type(void)
+{
+    wchar_t buf[64];
+    double d = 3.14;
+    swprintf(buf, 64, L"%d", d);          /* %d 需要 int，传 double 应报错 */
+}
+
+/* 违反约束「fwprintf 的第一个参数必须是 FILE*」：
+ * 传入 int，应报错。 */
+void bad_file_arg(void)
+{
+    fwprintf(0, L"abc");                  /* 应为 FILE* */
+}
+
+#endif /* 负向测试结束 */

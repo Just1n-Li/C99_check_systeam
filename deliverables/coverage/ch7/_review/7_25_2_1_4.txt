@@ -1,0 +1,150 @@
+=== TEXT ===
+The iswcntrl function
+Synopsis:
+[1] #include <wctype.h> int iswcntrl(wint_t wc);
+Description:
+[2] The iswcntrl function tests for any control wide character.
+
+=== CODE ===
+/*
+ * 测试 C99 7.25.2.1.4 —— iswcntrl 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，调用 iswcntrl(wint_t)，对控制宽字符返回非零，
+ *             对非控制宽字符返回 0；程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（如参数类型错误、缺少头文件声明等）
+ *             应导致编译报错，统一放在 #if 0 ... #endif 中。
+ *
+ * 条款段落：
+ *   [1] 概要：#include <wctype.h>  int iswcntrl(wint_t wc);
+ *   [2] 描述：测试任意控制宽字符。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 概要：验证头文件 <wctype.h> 提供 iswcntrl 声明，且返回类型为 int，
+ *     参数类型为 wint_t。通过取函数指针类型来静态验证签名。 */
+static int (*fp_iswcntrl)(wint_t) = iswcntrl;
+
+/* [2] 描述：iswcntrl 测试控制宽字符。
+ *     控制宽字符对应 ASCII 控制字符（0x00-0x1F 与 0x7F）以及
+ *     实现定义的其它控制宽字符。这里用基本 ASCII 控制字符做验证。 */
+
+static void test_control_chars(void)
+{
+    /* [2] 典型控制字符：NUL, BEL, BS, TAB, LF, CR, ESC, DEL 等 */
+    assert(iswcntrl((wint_t)0x00) != 0);   /* NUL  */
+    assert(iswcntrl((wint_t)0x07) != 0);   /* BEL  */
+    assert(iswcntrl((wint_t)0x08) != 0);   /* BS   */
+    assert(iswcntrl((wint_t)0x09) != 0);   /* TAB  */
+    assert(iswcntrl((wint_t)0x0A) != 0);   /* LF   */
+    assert(iswcntrl((wint_t)0x0D) != 0);   /* CR   */
+    assert(iswcntrl((wint_t)0x1B) != 0);   /* ESC  */
+    assert(iswcntrl((wint_t)0x1F) != 0);   /* US   */
+    assert(iswcntrl((wint_t)0x7F) != 0);   /* DEL  */
+}
+
+static void test_non_control_chars(void)
+{
+    /* [2] 非控制字符：可打印字符、空格、字母、数字等应返回 0 */
+    assert(iswcntrl((wint_t)L' ')  == 0);  /* 空格 */
+    assert(iswcntrl((wint_t)L'A')  == 0);
+    assert(iswcntrl((wint_t)L'z')  == 0);
+    assert(iswcntrl((wint_t)L'0')  == 0);
+    assert(iswcntrl((wint_t)L'9')  == 0);
+    assert(iswcntrl((wint_t)L'!')  == 0);
+    assert(iswcntrl((wint_t)L'~')  == 0);
+    assert(iswcntrl((wint_t)L'\n') != 0);  /* 换行是控制字符 */
+}
+
+static void test_return_value_form(void)
+{
+    /* [2] 返回值语义：控制字符返回非零，非控制字符返回零。
+     * 标准只要求“非零/零”，不要求具体值，因此只判断真假。 */
+    int r_ctrl = iswcntrl((wint_t)0x09);
+    int r_norm = iswcntrl((wint_t)L'X');
+    assert(r_ctrl != 0);
+    assert(r_norm == 0);
+
+    /* 与 iswprint 互补性（对基本 ASCII 范围）：控制字符不是可打印字符 */
+    assert(iswprint((wint_t)0x09) == 0);
+    assert(iswprint((wint_t)L'X') != 0);
+}
+
+static void test_wint_t_argument(void)
+{
+    /* [1] 参数类型为 wint_t，可接受 wint_t 变量 */
+    wint_t wc_ctrl = (wint_t)0x0A;
+    wint_t wc_norm = (wint_t)L'a';
+    assert(iswcntrl(wc_ctrl) != 0);
+    assert(iswcntrl(wc_norm) == 0);
+
+    /* 通过函数指针调用，验证签名一致 */
+    assert(fp_iswcntrl((wint_t)0x0D) != 0);
+    assert(fp_iswcntrl((wint_t)L'q') == 0);
+}
+
+int main(void)
+{
+    /* 使用 C locale 即可，基本 ASCII 控制字符在所有 locale 下都是控制字符 */
+    setlocale(LC_ALL, "C");
+
+    test_control_chars();
+    test_non_control_chars();
+    test_return_value_form();
+    test_wint_t_argument();
+
+    printf("C99 7.25.2.1.4 iswcntrl: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「概要 [1]：函数参数类型为 wint_t」：
+ * 传入结构体类型实参，无法转换为 wint_t，gcc -std=c99 应报错。 */
+struct S { int x; };
+void bad_arg_struct(void)
+{
+    struct S s;
+    iswcntrl(s);            /* 错误：结构体不能作为 wint_t 实参 */
+}
+
+/* 违反约束「概要 [1]：函数返回 int，需在 <wctype.h> 中声明」：
+ * 未包含 <wctype.h> 时调用 iswcntrl，C99 下隐式声明被禁止，
+ * 应报 "implicit declaration of function 'iswcntrl'" 错误。 */
+void bad_no_decl(void)
+{
+    /* 假设此处未 #include <wctype.h> */
+    iswcntrl((wint_t)0x09);
+}
+
+/* 违反约束「概要 [1]：参数个数为 1」：
+ * 传入两个实参，与原型不匹配，应报错。 */
+void bad_arg_count(void)
+{
+    iswcntrl((wint_t)0x09, (wint_t)0x0A);  /* 错误：实参过多 */
+}
+
+/* 违反约束「概要 [1]：参数个数为 1」：
+ * 不传实参，与原型不匹配，应报错。 */
+void bad_arg_missing(void)
+{
+    iswcntrl();            /* 错误：缺少实参 */
+}
+
+/* 违反约束「概要 [1]：返回类型为 int」：
+ * 将返回值赋给不兼容的指针类型（int 不能隐式转为指针），应报错。 */
+void bad_return_use(void)
+{
+    int *p = iswcntrl((wint_t)0x09);  /* 错误：int 不能初始化 int* */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

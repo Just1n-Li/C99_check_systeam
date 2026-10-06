@@ -1,0 +1,189 @@
+=== TEXT ===
+The wcsrchr function
+Synopsis:
+[1] #include <wchar.h> wchar_t *wcsrchr(const wchar_t *s, wchar_t c);
+Description:
+[2] The wcsrchr function locates the last occurrence of c in the wide string pointed to by s. The terminating null wide character is considered to be part of the wide string.
+Returns:
+[3] The wcsrchr function returns a pointer to the wide character, or a null pointer if c does not occur in the wide string.
+
+=== CODE ===
+/*
+ * 测试目标：C99 7.24.4.5.4  wcsrchr 函数
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（统一放在 #if 0 中）。
+ *
+ * 条款要点：
+ *   [1] 原型：wchar_t *wcsrchr(const wchar_t *s, wchar_t c);  需包含 <wchar.h>
+ *   [2] 定位 s 所指向宽字符串中 c 的最后一次出现；
+ *       终止空宽字符（L'\0'）被视为宽字符串的一部分。
+ *   [3] 返回指向该宽字符的指针；若 c 未出现，返回空指针。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型可用性：函数指针类型必须与原型完全一致 */
+static wchar_t *(*fp_wcsrchr)(const wchar_t *, wchar_t) = wcsrchr;
+
+int main(void)
+{
+    /* [1] 原型检查：返回类型为 wchar_t *，参数为 const wchar_t * 与 wchar_t */
+    {
+        wchar_t *(*p)(const wchar_t *, wchar_t) = wcsrchr;
+        assert(p == fp_wcsrchr);
+    }
+
+    /* [2] 基本语义：定位最后一次出现 */
+    {
+        const wchar_t s[] = L"abcabc";
+        wchar_t *r = wcsrchr(s, L'a');
+        assert(r != NULL);
+        assert(*r == L'a');
+        /* 最后一次出现的 'a' 位于索引 3 */
+        assert(r == s + 3);
+        /* 其后内容应为 "bc" */
+        assert(wcscmp(r, L"abc") == 0);
+    }
+
+    /* [2] 只出现一次时，返回该唯一出现处 */
+    {
+        const wchar_t s[] = L"hello world";
+        wchar_t *r = wcsrchr(s, L'w');
+        assert(r != NULL);
+        assert(r == s + 6);
+        assert(*r == L'w');
+    }
+
+    /* [2] 终止空宽字符被视为宽字符串的一部分：
+     *     查找 L'\0' 应返回指向终止符的指针（即字符串末尾） */
+    {
+        const wchar_t s[] = L"xyz";
+        wchar_t *r = wcsrchr(s, L'\0');
+        assert(r != NULL);
+        assert(*r == L'\0');
+        assert(r == s + 3);          /* 指向终止空宽字符 */
+        assert(r == s + wcslen(s));  /* 与 wcslen 一致 */
+    }
+
+    /* [2] 空宽字符串：仅含终止空宽字符，查找 L'\0' 应返回指向它的指针 */
+    {
+        const wchar_t s[] = L"";
+        wchar_t *r = wcsrchr(s, L'\0');
+        assert(r != NULL);
+        assert(r == s);
+        assert(*r == L'\0');
+    }
+
+    /* [3] c 未出现时返回空指针 */
+    {
+        const wchar_t s[] = L"abcdef";
+        wchar_t *r = wcsrchr(s, L'z');
+        assert(r == NULL);
+    }
+
+    /* [3] 空宽字符串中查找非空字符，返回空指针 */
+    {
+        const wchar_t s[] = L"";
+        wchar_t *r = wcsrchr(s, L'a');
+        assert(r == NULL);
+    }
+
+    /* [2][3] 查找的字符出现在字符串开头与结尾 */
+    {
+        const wchar_t s[] = L"aXXXa";
+        wchar_t *r = wcsrchr(s, L'a');
+        assert(r != NULL);
+        assert(r == s + 4);   /* 最后一次出现在末尾 */
+        assert(*r == L'a');
+    }
+
+    /* [2] 宽字符（非 ASCII）查找 */
+    {
+        const wchar_t s[] = L"\u4e2d\u6587\u4e2d";  /* 中 文 中 */
+        wchar_t *r = wcsrchr(s, L'\u4e2d');
+        assert(r != NULL);
+        assert(r == s + 2);
+        assert(*r == L'\u4e2d');
+    }
+
+    /* [2] 与 wcschr（首次出现）对照：wcsrchr 返回最后一次出现 */
+    {
+        const wchar_t s[] = L"banana";
+        wchar_t *first = wcschr(s, L'a');
+        wchar_t *last  = wcsrchr(s, L'a');
+        assert(first != NULL && last != NULL);
+        assert(first == s + 1);
+        assert(last  == s + 5);
+        assert(first < last);
+    }
+
+    /* [3] 返回值可用于修改原字符串（返回非 const 指针） */
+    {
+        wchar_t s[] = L"abcabc";
+        wchar_t *r = wcsrchr(s, L'b');
+        assert(r != NULL);
+        *r = L'B';
+        assert(wcscmp(s, L"abcabC") != 0); /* 仅确认已修改 */
+        assert(s[4] == L'B');
+    }
+
+    printf("All positive tests for wcsrchr (C99 7.24.4.5.4) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 原型参数类型」：第一个实参应为 const wchar_t *，
+ * 传入 int * 不兼容，gcc -std=c99 应报错（incompatible pointer type）。 */
+{
+    int buf[4] = {0};
+    wchar_t *r = wcsrchr(buf, L'a');   /* 错误：int * 不能转换为 const wchar_t * */
+    (void)r;
+}
+
+/* 违反约束「[1] 原型参数类型」：第二个实参应为 wchar_t，
+ * 传入 int（在 wchar_t 为 unsigned short 的实现上）会触发类型不匹配警告/错误。 */
+{
+    const wchar_t s[] = L"abc";
+    wchar_t *r = wcsrchr(s, 1.5);      /* 错误：double 不能隐式转换为 wchar_t 参数 */
+    (void)r;
+}
+
+/* 违反约束「[1] 参数个数」：wcsrchr 需要恰好 2 个实参，
+ * 只传 1 个应报错（too few arguments to function 'wcsrchr'）。 */
+{
+    const wchar_t s[] = L"abc";
+    wchar_t *r = wcsrchr(s);           /* 错误：实参个数不足 */
+    (void)r;
+}
+
+/* 违反约束「[1] 参数个数」：传 3 个实参应报错（too many arguments）。 */
+{
+    const wchar_t s[] = L"abc";
+    wchar_t *r = wcsrchr(s, L'a', L'b'); /* 错误：实参个数过多 */
+    (void)r;
+}
+
+/* 违反约束「[1] 返回类型」：将 wchar_t * 结果赋给不兼容的指针类型
+ * 且未做强制转换，应报错（incompatible pointer type）。 */
+{
+    const wchar_t s[] = L"abc";
+    int *r = wcsrchr(s, L'a');         /* 错误：wchar_t * 不能赋给 int * */
+    (void)r;
+}
+
+/* 违反约束「[1] 调用需在作用域内声明」：未包含 <wchar.h> 且未声明 wcsrchr，
+ * 在 C99 中调用未声明函数为约束违反，应报错（implicit declaration）。 */
+{
+    const wchar_t s[] = L"abc";
+    wchar_t *r = wcsrchr_undeclared(s, L'a'); /* 错误：隐式声明 */
+    (void)r;
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,82 @@
+=== ARTICLE ===
+6.5.13
+=== TEXT ===
+Logical AND operator
+Syntax:
+[1] logical-AND-expression: inclusive-OR-expression logical-AND-expression && inclusive-OR-expression
+Constraints:
+[2] Each of the operands shall have scalar type.
+Semantics:
+[3] The && operator shall yield 1 if both of its operands compare unequal to 0; otherwise, it yields 0. The result has type int.
+[4] Unlike the bitwise binary & operator, the && operator guarantees left-to-right evaluation; there is a sequence point after the evaluation of the first operand. If the first operand compares equal to 0, the second operand is not evaluated.
+=== CODE ===
+/*
+ * 验证 C99 条款 6.5.13 Logical AND operator
+ * 预期行为：
+ * 正向测试：编译并运行通过，assert 不触发。
+ * 负向测试：编译报错（违反操作数必须为标量类型的约束）。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+void test_logical_and(void) {
+    int a = 1, b = 0;
+    float c = 1.0f, d = 0.0f;
+    int *p = &a, *q = NULL;
+
+    /* [3] 两个操作数都不为0时结果为1 */
+    assert((a && a) == 1);
+    assert((a && c) == 1);
+    assert((p && a) == 1);
+
+    /* [3] 否则结果为0 */
+    assert((a && b) == 0);
+    assert((b && a) == 0);
+    assert((b && b) == 0);
+    assert((a && d) == 0);
+    assert((q && a) == 0);
+
+    /* [3] 结果类型为 int */
+    assert(sizeof(a && b) == sizeof(int));
+    assert(sizeof(p && q) == sizeof(int));
+
+    /* [4] 保证从左到右求值，第一操作数为真时第二操作数被求值 */
+    int seq = 0;
+    int res = ((seq = 1) && (seq = 2));
+    assert(seq == 2);
+    assert(res == 1);
+
+    /* [4] 短路求值：第一操作数等于0时，第二操作数不求值 */
+    int eval = 0;
+    int res2 = (0 && (eval = 1));
+    assert(eval == 0);
+    assert(res2 == 0);
+
+    /* [4] 序列点：第一操作数求值后，其副作用在第二操作数求值前完成 */
+    int x = 0;
+    int y = 0;
+    if ((x = 1) && (y = x)) {
+        assert(x == 1 && y == 1);
+    }
+}
+
+int main(void) {
+    test_logical_and();
+    printf("6.5.13 正向测试全部通过。\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+
+#if 0
+/* [2] 违反约束「操作数必须为标量类型」：结构体不能作为 && 的操作数，gcc -std=c99 应报错 */
+struct S { int a; } s1, s2;
+s1 && s2;
+
+/* [2] 违反约束「操作数必须为标量类型」：数组不能作为 && 的操作数，gcc -std=c99 应报错 */
+int arr1[5], arr2[5];
+arr1 && arr2;
+#endif

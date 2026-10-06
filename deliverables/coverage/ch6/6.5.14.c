@@ -1,0 +1,78 @@
+/*
+ * 验证 C99 条款 6.5.14 Logical OR operator
+ * 预期行为：正向测试运行通过，负向测试编译报错
+ */
+#include <stdio.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+int side_effect_flag = 0;
+int trigger_side_effect(void) {
+    side_effect_flag = 1;
+    return 1;
+}
+
+int main(void) {
+    /* [1] 语法：logical-OR-expression || logical-AND-expression */
+    int a = 1, b = 0;
+    int c = a || b;
+
+    /* [2] 约束：操作数应为标量类型（算术类型、指针类型） */
+    int x = 5;
+    float y = 0.0f;
+    int *p = NULL;
+    int *q = &x;
+    assert((x || y) == 1); /* 算术类型 */
+    assert((p || q) == 1); /* 指针类型 */
+    assert((p || y) == 0); /* 混合标量类型 */
+
+    /* [3] 语义：如果任一操作数不等于0，结果为1；否则为0。结果类型为int */
+    assert((1 || 0) == 1);
+    assert((0 || 0) == 0);
+    assert((0 || 1) == 1);
+    assert((1 || 1) == 1);
+    assert((5 || 0) == 1);
+    assert((0 || 3.14) == 1);
+    
+    /* 验证结果类型为 int */
+    assert(sizeof(1 || 0) == sizeof(int));
+    assert(sizeof(1.0 || 0.0) == sizeof(int));
+    assert(sizeof((void*)0 || (void*)1) == sizeof(int));
+
+    /* [4] 语义：保证从左到右求值；第一操作数求值后有序列点；如果第一操作数不等于0，则不求值第二操作数 */
+    side_effect_flag = 0;
+    if (1 || trigger_side_effect()) {
+        assert(side_effect_flag == 0); /* 第二操作数未被求值 */
+    }
+
+    side_effect_flag = 0;
+    if (0 || trigger_side_effect()) {
+        assert(side_effect_flag == 1); /* 第一操作数为0，求值第二操作数 */
+    }
+
+    /* 验证序列点：第一操作数求值后有序列点，可以安全修改并读取 */
+    int i = 0;
+    if ((i = 1) || (i = 2)) {
+        assert(i == 1); /* 短路，i 只被赋值为 1 */
+    }
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+/* [2] 违反约束「操作数必须为标量类型」：结构体不能作为 || 的操作数 */
+struct S { int x; } s1, s2;
+void test_struct(void) {
+    s1 || s2; /* gcc -std=c99 应报错: invalid operands to binary || */
+}
+
+/* [2] 违反约束「操作数必须为标量类型」：联合体不能作为 || 的操作数 */
+union U { int x; } u1, u2;
+void test_union(void) {
+    u1 || u2; /* gcc -std=c99 应报错: invalid operands to binary || */
+}
+#endif

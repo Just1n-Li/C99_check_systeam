@@ -1,0 +1,335 @@
+=== TEXT ===
+Extended multibyte/wide character conversion utilities
+[1] The header <wchar.h> declares an extended set of functions useful for conversion between multibyte characters and wide characters.
+[2] Most of the following functions -- those that are listed as ''restartable'', 7.24.6.3 and 7.24.6.4 -- take as a last argument a pointer to an object of type mbstate_t that is used to describe the current conversion state from a particular multibyte character sequence to a wide character sequence (or the reverse) under the rules of a particular setting for the LC_CTYPE category of the current locale.
+[3] The initial conversion state corresponds, for a conversion in either direction, to the beginning of a new multibyte character in the initial shift state. A zero-valued mbstate_t object is (at least) one way to describe an initial conversion state. A zero- valued mbstate_t object can be used to initiate conversion involving any multibyte character sequence, in any LC_CTYPE category setting. If an mbstate_t object has been altered by any of the functions described in this subclause, and is then used with a different multibyte character sequence, or in the other conversion direction, or with a different LC_CTYPE category setting than on earlier function calls, the behavior is undefined.
+[4] On entry, each function takes the described conversion state (either internal or pointed to by an argument) as current. The conversion state described by the pointed-to object is altered as needed to track the shift state, and the position within a multibyte character, for the associated multibyte character sequence.
+Footnotes:
+299) Thus, a particular mbstate_t object can be used, for example, with both the mbrtowc and mbsrtowcs functions as long as they are used to step sequentially through the same multibyte character string.
+
+=== CODE ===
+/*
+ * 测试条款：C99 7.24.6 Extended multibyte/wide character conversion utilities
+ *
+ * 预期行为：
+ *   正向测试：包含 <wchar.h>，使用 mbstate_t、mbrtowc、wcrtomb、mbsrtowcs、
+ *             wcsrtombs 等可重启函数，验证初始转换状态（零值 mbstate_t）、
+ *             状态对象在连续转换中的更新、以及可重启函数按顺序处理同一序列。
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（如把非指针传给需要指针的参数、
+ *             把错误类型传给 mbstate_t* 参数等），应导致编译报错。
+ *             这些片段放在 #if 0 中，保证本文件仍可编译运行。
+ *
+ * 说明：本测试不依赖具体 locale 的多字节编码细节，仅使用 ASCII 范围内的
+ *       字符（在 "C" locale 下即为单字节），从而保证可移植地运行。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <wchar.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] <wchar.h> 声明了多字节/宽字符转换的扩展函数集。
+ *      验证这些声明可见且类型正确。 */
+static void test_header_declarations(void)
+{
+    /* 函数指针类型检查：若声明缺失或签名不符，编译会失败/警告。 */
+    size_t (*p_mbrtowc)(wchar_t *restrict, const char *restrict,
+                        size_t, mbstate_t *restrict) = mbrtowc;
+    size_t (*p_wcrtomb)(char *restrict, wchar_t,
+                        mbstate_t *restrict) = wcrtomb;
+    size_t (*p_mbsrtowcs)(wchar_t *restrict, const char **restrict,
+                          size_t, mbstate_t *restrict) = mbsrtowcs;
+    size_t (*p_wcsrtombs)(char *restrict, const wchar_t **restrict,
+                          size_t, mbstate_t *restrict) = wcsrtombs;
+
+    assert(p_mbrtowc != NULL);
+    assert(p_wcrtomb != NULL);
+    assert(p_mbsrtowcs != NULL);
+    assert(p_wcsrtombs != NULL);
+
+    /* mbstate_t 必须是完整对象类型，可以定义对象并取地址。 */
+    mbstate_t st;
+    mbstate_t *pst = &st;
+    assert(pst == &st);
+    (void)pst;
+}
+
+/* [3] 零值 mbstate_t 对象描述初始转换状态。
+ *      验证：将 mbstate_t 清零后，可用来启动任意多字节序列的转换。 */
+static void test_zero_mbstate_initial(void)
+{
+    mbstate_t st;
+    wchar_t wc = 0;
+    size_t r;
+
+    /* 零值初始化（两种方式都表示初始转换状态）。 */
+    memset(&st, 0, sizeof st);
+
+    /* 用零值状态启动一次 mbrtowc 转换。 */
+    r = mbrtowc(&wc, "A", 1, &st);
+    assert(r == 1);          /* 消耗 1 个字节 */
+    assert(wc == L'A');
+
+    /* 另一种零值方式：静态存储期对象默认零初始化。 */
+    static mbstate_t st2;    /* 静态对象零初始化 */
+    wchar_t wc2 = 0;
+    r = mbrtowc(&wc2, "B", 1, &st2);
+    assert(r == 1);
+    assert(wc2 == L'B');
+}
+
+/* [3] 零值 mbstate_t 可用于任意 LC_CTYPE 类别设置下启动转换。
+ *      这里在 "C" locale 下验证（不改变 locale 以保证可移植性）。 */
+static void test_zero_mbstate_any_locale(void)
+{
+    mbstate_t st;
+    wchar_t wc = 0;
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = mbrtowc(&wc, "Z", 1, &st);
+    assert(r == 1);
+    assert(wc == L'Z');
+}
+
+/* [4] 进入函数时，函数把所描述的转换状态当作当前状态；
+ *      被指向对象所描述的状态会按需被修改，以跟踪移位状态
+ *      以及多字节字符序列中的位置。
+ *
+ *      验证：连续调用 mbrtowc 处理同一字符串时，状态对象被更新，
+ *            从而能正确逐字符前进。 */
+static void test_state_updated_sequentially(void)
+{
+    const char *s = "abc";
+    mbstate_t st;
+    wchar_t wc;
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+
+    /* 第一次调用：处理 'a' */
+    r = mbrtowc(&wc, s, 3, &st);
+    assert(r == 1);
+    assert(wc == L'a');
+
+    /* 第二次调用：从 s+1 继续，状态已被更新 */
+    r = mbrtowc(&wc, s + 1, 2, &st);
+    assert(r == 1);
+    assert(wc == L'b');
+
+    /* 第三次调用：从 s+2 继续 */
+    r = mbrtowc(&wc, s + 2, 1, &st);
+    assert(r == 1);
+    assert(wc == L'c');
+}
+
+/* [2][4] 可重启函数（7.24.6.3 mbrtowc / 7.24.6.4 wcrtomb 等）
+ *        以指向 mbstate_t 对象的指针作为最后一个参数。
+ *
+ *        验证 mbrtowc 与 wcrtomb 的往返转换，并验证状态对象
+ *        在转换方向上的使用。 */
+static void test_restartable_roundtrip(void)
+{
+    mbstate_t st;
+    wchar_t wc = 0;
+    char buf[MB_CUR_MAX > 0 ? MB_CUR_MAX : 1];
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+
+    /* 多字节 -> 宽字符 */
+    r = mbrtowc(&wc, "Q", 1, &st);
+    assert(r == 1);
+    assert(wc == L'Q');
+
+    /* 宽字符 -> 多字节（使用新的初始状态） */
+    memset(&st, 0, sizeof st);
+    r = wcrtomb(buf, L'Q', &st);
+    assert(r == 1);
+    assert(buf[0] == 'Q');
+}
+
+/* [2][4] mbsrtowcs / wcsrtombs 也是可重启函数，接受 mbstate_t*。
+ *        验证它们按顺序处理整个序列，并更新状态。 */
+static void test_mbsrtowcs_wcsrtombs(void)
+{
+    const char *src = "hello";
+    const char *p = src;
+    wchar_t dst[16];
+    mbstate_t st;
+    size_t n;
+
+    memset(&st, 0, sizeof st);
+    n = mbsrtowcs(dst, &p, 16, &st);
+    assert(n == 5);
+    assert(wcscmp(dst, L"hello") == 0);
+    assert(p == NULL);   /* 转换到终止空字符后，*src 被置为 NULL */
+
+    /* 反向：宽字符 -> 多字节 */
+    {
+        const wchar_t *wsrc = L"world";
+        const wchar_t *wp = wsrc;
+        char mb[32];
+        mbstate_t st2;
+
+        memset(&st2, 0, sizeof st2);
+        n = wcsrtombs(mb, &wp, sizeof mb, &st2);
+        assert(n == 5);
+        assert(strcmp(mb, "world") == 0);
+        assert(wp == NULL);
+    }
+}
+
+/* [3] 脚注 299：同一个 mbstate_t 对象可以同时用于 mbrtowc 和 mbsrtowcs，
+ *      只要它们被用来顺序地遍历同一个多字节字符串。
+ *
+ *      验证：先用 mbrtowc 处理第一个字符，再用 mbsrtowcs 从剩余位置继续，
+ *            共享同一个状态对象。 */
+static void test_shared_state_across_functions(void)
+{
+    const char *s = "xyz";
+    const char *p;
+    mbstate_t st;
+    wchar_t wc;
+    wchar_t dst[8];
+    size_t r, n;
+
+    memset(&st, 0, sizeof st);
+
+    /* 用 mbrtowc 处理第一个字符 'x' */
+    r = mbrtowc(&wc, s, 3, &st);
+    assert(r == 1);
+    assert(wc == L'x');
+
+    /* 用同一个状态对象，从 s+1 开始用 mbsrtowcs 处理剩余 "yz" */
+    p = s + 1;
+    n = mbsrtowcs(dst, &p, 8, &st);
+    assert(n == 2);
+    assert(dst[0] == L'y');
+    assert(dst[1] == L'z');
+    assert(dst[2] == L'\0');
+}
+
+/* [4] 验证状态对象在遇到不完整多字节字符时被更新（返回 (size_t)-2），
+ *      随后用剩余字节继续调用可完成转换。这里用 ASCII 单字节字符模拟
+ *      一个"分两次喂入"的场景：先喂 0 字节（不完整），再喂完整字符。
+ *      注意：在 "C" locale 下每个字符是单字节，因此这里主要验证
+ *      状态对象被函数接受并更新，以及返回值的语义。 */
+static void test_state_tracking_position(void)
+{
+    mbstate_t st;
+    wchar_t wc = 0;
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+
+    /* 正常单字节转换，验证状态被接受并更新 */
+    r = mbrtowc(&wc, "k", 1, &st);
+    assert(r == 1);
+    assert(wc == L'k');
+
+    /* 再次用同一状态处理下一个字符 */
+    r = mbrtowc(&wc, "m", 1, &st);
+    assert(r == 1);
+    assert(wc == L'm');
+}
+
+int main(void)
+{
+    /* 使用 "C" locale，保证 ASCII 字符为单字节，测试可移植。 */
+    setlocale(LC_CTYPE, "C");
+
+    test_header_declarations();
+    test_zero_mbstate_initial();
+    test_zero_mbstate_any_locale();
+    test_state_updated_sequentially();
+    test_restartable_roundtrip();
+    test_mbsrtowcs_wcsrtombs();
+    test_shared_state_across_functions();
+    test_state_tracking_position();
+
+    printf("C99 7.24.6 positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「mbrtowc 的第 4 个参数必须为 mbstate_t * 类型」：
+ * 传入 int 而非指针，gcc -std=c99 应报错（参数类型不兼容）。 */
+void neg_mbrtowc_wrong_state_type(void)
+{
+    wchar_t wc;
+    int not_a_state = 0;
+    mbrtowc(&wc, "a", 1, not_a_state);   /* 错误：应为 mbstate_t* */
+}
+
+/* 违反约束「wcrtomb 的第 3 个参数必须为 mbstate_t * 类型」：
+ * 传入 wchar_t 而非指针，应报错。 */
+void neg_wcrtomb_wrong_state_type(void)
+{
+    char buf[8];
+    wchar_t bad = L'x';
+    wcrtomb(buf, L'a', bad);             /* 错误：应为 mbstate_t* */
+}
+
+/* 违反约束「mbsrtowcs 的第 2 个参数必须为 const char ** 类型」：
+ * 传入 const char * 而非指向指针的指针，应报错。 */
+void neg_mbsrtowcs_wrong_src_type(void)
+{
+    wchar_t dst[8];
+    mbstate_t st;
+    const char *s = "abc";
+    mbsrtowcs(dst, s, 8, &st);           /* 错误：应为 const char** */
+}
+
+/* 违反约束「wcsrtombs 的第 2 个参数必须为 const wchar_t ** 类型」：
+ * 传入 const wchar_t * 而非指向指针的指针，应报错。 */
+void neg_wcsrtombs_wrong_src_type(void)
+{
+    char dst[8];
+    mbstate_t st;
+    const wchar_t *ws = L"abc";
+    wcsrtombs(dst, ws, 8, &st);          /* 错误：应为 const wchar_t** */
+}
+
+/* 违反约束「mbrtowc 的第 1 个参数必须为 wchar_t * 类型」：
+ * 传入 char * 而非 wchar_t *，应报错。 */
+void neg_mbrtowc_wrong_dst_type(void)
+{
+    char c;
+    mbstate_t st;
+    mbrtowc(&c, "a", 1, &st);            /* 错误：应为 wchar_t* */
+}
+
+/* 违反约束「wcrtomb 的第 2 个参数必须为 wchar_t 类型」：
+ * 传入 char * 而非 wchar_t，应报错。 */
+void neg_wcrtomb_wrong_wc_type(void)
+{
+    char buf[8];
+    mbstate_t st;
+    wcrtomb(buf, "a", &st);              /* 错误：应为 wchar_t */
+}
+
+/* 违反约束「mbstate_t 是完整对象类型，不能对其做算术运算」：
+ * 对 mbstate_t 对象做乘法，应报错。 */
+void neg_mbstate_arithmetic(void)
+{
+    mbstate_t a, b;
+    mbstate_t c = a * b;                 /* 错误：结构体不能相乘 */
+}
+
+/* 违反约束「mbrtowc 返回 size_t，不能赋值给结构体」：
+ * 类型不兼容的赋值，应报错。 */
+void neg_return_type_mismatch(void)
+{
+    mbstate_t st;
+    mbstate_t r = mbrtowc(NULL, "a", 1, &st);  /* 错误：size_t 赋给 mbstate_t */
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,200 @@
+=== ARTICLE 7.21.5.1 ===
+--- TEXT ---
+The memchr function
+Synopsis:
+[1] #include <string.h> void *memchr(const void *s, int c, size_t n);
+Description:
+[2] The memchr function locates the first occurrence of c (converted to an unsigned char) in the initial n characters (each interpreted as unsigned char) of the object pointed to by s.
+Returns:
+[3] The memchr function returns a pointer to the located character, or a null pointer if the character does not occur in the object.
+--- CODE ---
+/*
+ * 测试 C99 7.21.5.1 —— memchr 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 条款要点：
+ *   [1] 原型：void *memchr(const void *s, int c, size_t n);
+ *   [2] 在 s 所指对象的前 n 个字符（每个按 unsigned char 解释）中，
+ *       定位 c（转换为 unsigned char）的首次出现。
+ *   [3] 返回指向该字符的指针；若未出现则返回空指针。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与声明一致 */
+static void *(*fp_memchr)(const void *, int, size_t) = memchr;
+
+int main(void)
+{
+    /* [1] 原型可用性：能取地址、能通过函数指针调用 */
+    assert(fp_memchr == memchr);
+
+    /* [2] 基本定位：在字符串中查找已存在的字符 */
+    {
+        const char *s = "hello world";
+        void *p = memchr(s, 'w', strlen(s));
+        assert(p != NULL);
+        assert(p == (const void *)(s + 6));
+        assert(*(const char *)p == 'w');
+    }
+
+    /* [2] 查找第一个字符 */
+    {
+        const char *s = "abcabc";
+        void *p = memchr(s, 'a', 6);
+        assert(p == (const void *)s);   /* 首次出现，不是第二个 */
+    }
+
+    /* [2] 查找最后一个字符 */
+    {
+        const char *s = "abcabc";
+        void *p = memchr(s, 'c', 6);
+        assert(p == (const void *)(s + 2)); /* 首次出现的 'c' */
+    }
+
+    /* [3] 未找到时返回空指针 */
+    {
+        const char *s = "hello";
+        void *p = memchr(s, 'z', 5);
+        assert(p == NULL);
+    }
+
+    /* [2] n 限制搜索范围：字符存在但超出前 n 个字符，应返回 NULL */
+    {
+        const char *s = "hello";
+        void *p = memchr(s, 'o', 4);   /* 'o' 在下标 4，不在前 4 个字符内 */
+        assert(p == NULL);
+        p = memchr(s, 'o', 5);         /* 扩大到 5 个字符即可找到 */
+        assert(p == (const void *)(s + 4));
+    }
+
+    /* [2] n == 0：不搜索任何字符，必返回 NULL */
+    {
+        const char *s = "hello";
+        assert(memchr(s, 'h', 0) == NULL);
+    }
+
+    /* [2] 查找嵌入的 NUL 字节（'\0'），memchr 不受字符串结尾影响 */
+    {
+        const char buf[6] = { 'a', 'b', '\0', 'c', 'd', '\0' };
+        void *p = memchr(buf, '\0', sizeof buf);
+        assert(p == (const void *)(buf + 2)); /* 首个 NUL 在下标 2 */
+    }
+
+    /* [2] c 转换为 unsigned char：传入 0x100 + 'A' 应等价于 'A' */
+    {
+        const char *s = "ABC";
+        void *p = memchr(s, 0x100 + 'A', 3);
+        assert(p == (const void *)s);
+    }
+
+    /* [2] c 转换为 unsigned char：传入 -1 等价于 0xFF (unsigned char) */
+    {
+        const unsigned char buf[3] = { 0x00, 0xFF, 0x01 };
+        void *p = memchr(buf, -1, sizeof buf);
+        assert(p == (const void *)(buf + 1));
+    }
+
+    /* [2] 每个字符按 unsigned char 解释：高位字节 0x80 可被找到 */
+    {
+        const unsigned char buf[4] = { 0x10, 0x80, 0x20, 0x30 };
+        void *p = memchr(buf, 0x80, sizeof buf);
+        assert(p == (const void *)(buf + 1));
+    }
+
+    /* [2] 在非字符数组（任意对象）上工作：int 数组按字节搜索 */
+    {
+        unsigned int v = 0x11223344u;
+        unsigned char bytes[sizeof v];
+        memcpy(bytes, &v, sizeof v);
+        /* 在小端机器上 0x44 是首字节；这里只验证能定位到某个已知字节 */
+        void *p = memchr(&v, 0x44, sizeof v);
+        /* 无论字节序如何，0x44 一定存在于 v 的字节表示中 */
+        assert(p != NULL);
+        assert(*(const unsigned char *)p == 0x44);
+    }
+
+    /* [3] 返回指针可写（void * 非 const）：通过返回指针修改对象 */
+    {
+        char s[] = "hello";
+        void *p = memchr(s, 'e', 5);
+        assert(p == (void *)(s + 1));
+        *(char *)p = 'E';
+        assert(strcmp(s, "hEllo") == 0);
+    }
+
+    /* [2][3] 搜索范围恰好覆盖整个对象（n == 对象大小） */
+    {
+        const char s[] = "xyz";
+        void *p = memchr(s, 'z', sizeof s); /* 包含结尾 '\0' */
+        assert(p == (const void *)(s + 2));
+        p = memchr(s, '\0', sizeof s);
+        assert(p == (const void *)(s + 3));
+    }
+
+    printf("memchr: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「memchr 的第一个参数类型为 const void *」：
+ * 传入不兼容的指针类型（如 int *）在 C 中会触发约束违反（-Wincompatible-pointer-types，
+ * 严格模式下为错误）。gcc -std=c99 -pedantic-errors 应报错。 */
+void bad_arg_type(void)
+{
+    int arr[4] = { 1, 2, 3, 4 };
+    int *p = memchr(arr, 0, sizeof arr);   /* 期望：不兼容指针类型警告/错误 */
+    (void)p;
+}
+
+/* 违反约束「memchr 的第二个参数类型为 int」：
+ * 传入结构体类型，参数类型不匹配，应编译报错。 */
+struct S { int x; };
+void bad_second_arg(void)
+{
+    const char *s = "abc";
+    struct S sv;
+    void *p = memchr(s, sv, 3);            /* 期望：参数类型不兼容，编译报错 */
+    (void)p;
+}
+
+/* 违反约束「memchr 的第三个参数类型为 size_t」：
+ * 传入结构体类型，参数类型不匹配，应编译报错。 */
+void bad_third_arg(void)
+{
+    const char *s = "abc";
+    struct S sv;
+    void *p = memchr(s, 'a', sv);          /* 期望：参数类型不兼容，编译报错 */
+    (void)p;
+}
+
+/* 违反约束「调用函数必须提供正确数量的实参」：
+ * 少传参数，应编译报错。 */
+void bad_arg_count(void)
+{
+    const char *s = "abc";
+    void *p = memchr(s, 'a');              /* 期望：实参数量不足，编译报错 */
+    (void)p;
+}
+
+/* 违反约束「对非左值结果赋值」：
+ * memchr 返回 void *，是右值；对其解引用后赋值在语义上合法，
+ * 但直接对函数调用结果赋值（非左值）应编译报错。 */
+void bad_assign_to_rvalue(void)
+{
+    const char *s = "abc";
+    memchr(s, 'a', 3) = (void *)0;         /* 期望：赋值目标不是左值，编译报错 */
+}
+
+#endif /* 负向测试结束 */

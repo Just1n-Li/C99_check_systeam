@@ -1,0 +1,367 @@
+=== ARTICLE 7.24.2.1 ===
+--- TEXT ---
+The fwprintf function
+Synopsis:
+[1] #include <stdio.h> #include <wchar.h> int fwprintf(FILE * restrict stream, const wchar_t * restrict format, ...);
+Description:
+[2] The fwprintf function writes output to the stream pointed to by stream, under control of the wide string pointed to by format that specifies how subsequent arguments are converted for output. If there are insufficient arguments for the format, the behavior is undefined. If the format is exhausted while arguments remain, the excess arguments are evaluated (as always) but are otherwise ignored. The fwprintf function returns when the end of the format string is encountered.
+[3] The format is composed of zero or more directives: ordinary wide characters (not %), which are copied unchanged to the output stream; and conversion specifications, each of which results in fetching zero or more subsequent arguments, converting them, if applicable, according to the corresponding conversion specifier, and then writing the result to the output stream.
+[4] Each conversion specification is introduced by the wide character %. After the %, the following appear in sequence: Zero or more flags (in any order) that modify the meaning of the conversion specification. An optional minimum field width. If the converted value has fewer wide characters than the field width, it is padded with spaces (by default) on the left (or right, if the left adjustment flag, described later, has been given) to the field width. The field width takes the form of an asterisk * (described later) or a nonnegative decimal integer. An optional precision that gives the minimum number of digits to appear for the d, i, o, u, x, and X conversions, the number of digits to appear after the decimal-point wide character for a, A, e, E, f, and F conversions, the maximum number of significant digits for the g and G conversions, or the maximum number of wide characters to be written for s conversions. The precision takes the form of a period (.) followed either by an asterisk * (described later) or by an optional decimal integer; if only the period is specified, the precision is taken as zero. If a precision appears with any other conversion specifier, the behavior is undefined. An optional length modifier that specifies the size of the argument. A conversion specifier wide character that specifies the type of conversion to be applied.
+[5] As noted above, a field width, or precision, or both, may be indicated by an asterisk. In this case, an int argument supplies the field width or precision. The arguments specifying field width, or precision, or both, shall appear (in that order) before the argument (if any) to be converted. A negative field width argument is taken as a - flag followed by a positive field width. A negative precision argument is taken as if the precision were omitted.
+[6] The flag wide characters and their meanings are: - The result of the conversion is left-justified within the field. (It is right-justified if this flag is not specified.) + The result of a signed conversion always begins with a plus or minus sign. (It begins with a sign only when a negative value is converted if this flag is not specified.) space If the first wide character of a signed conversion is not a sign, or if a signed conversion results in no wide characters, a space is prefixed to the result. If the space and + flags both appear, the space flag is ignored. # The result is converted to an ''alternative form''. For o conversion, it increases the precision, if and only if necessary, to force the first digit of the result to be a zero (if the value and precision are both 0, a single 0 is printed). For x (or X) conversion, a nonzero result has 0x (or 0X) prefixed to it. For a, A, e, E, f, F, g, and G conversions, the result of converting a floating-point number always contains a decimal-point wide character, even if no digits follow it. (Normally, a decimal-point wide character appears in the result of these conversions only if a digit follows it.) For g and G conversions, trailing zeros are not removed from the result. For other conversions, the behavior is undefined. 0 For d, i, o, u, x, X, a, A, e, E, f, F, g, and G conversions, leading zeros (following any indication of sign or base) are used to pad to the field width rather than performing space padding, except when converting an infinity or NaN. If the 0 and - flags both appear, the 0 flag is ignored. For d, i, o, u, x, and X conversions, if a precision is specified, the 0 flag is ignored. For other conversions, the behavior is undefined.
+[7] The length modifiers and their meanings are: hh Specifies that a following d, i, o, u, x, or X conversion specifier applies to a signed char or unsigned char argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to signed char or unsigned char before printing); or that a following n conversion specifier applies to a pointer to a signed char argument. h Specifies that a following d, i, o, u, x, or X conversion specifier applies to a short int or unsigned short int argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to short int or unsigned short int before printing); or that a following n conversion specifier applies to a pointer to a short int argument. l (ell) Specifies that a following d, i, o, u, x, or X conversion specifier applies to a long int or unsigned long int argument; that a following n conversion specifier applies to a pointer to a long int argument; that a following c conversion specifier applies to a wint_t argument; that a following s conversion specifier applies to a pointer to a wchar_t argument; or has no effect on a following a, A, e, E, f, F, g, or G conversion specifier. ll (ell-ell) Specifies that a following d, i, o, u, x, or X conversion specifier applies to a long long int or unsigned long long int argument; or that a following n conversion specifier applies to a pointer to a long long int argument. j Specifies that a following d, i, o, u, x, or X conversion specifier applies to an intmax_t or uintmax_t argument; or that a following n conversion specifier applies to a pointer to an intmax_t argument. z Specifies that a following d, i, o, u, x, or X conversion specifier applies to a size_t or the corresponding signed integer type argument; or that a following n conversion specifier applies to a pointer to a signed integer type corresponding to size_t argument. t Specifies that a following d, i, o, u, x, or X conversion specifier applies to a ptrdiff_t or the corresponding unsigned integer type argument; or that a following n conversion specifier applies to a pointer to a ptrdiff_t argument. L Specifies that a following a, A, e, E, f, F, g, or G conversion specifier applies to a long double argument. If a length modifier appears with any conversion specifier other than as specified above, the behavior is undefined.
+[8] The conversion specifiers and their meanings are: d,i The int argument is converted to signed decimal in the style [-]dddd. The precision specifies the minimum number of digits to appear; if the value being converted can be represented in fewer digits, it is expanded with leading zeros. The default precision is 1. The result of converting a zero value with a precision of zero is no wide characters. o,u,x,X The unsigned int argument is converted to unsigned octal (o), unsigned decimal (u), or unsigned hexadecimal notation (x or X) in the style dddd; the letters abcdef are used for x conversion and the letters ABCDEF for X conversion. The precision specifies the minimum number of digits to appear; if the value being converted can be represented in fewer digits, it is expanded with leading zeros. The default precision is 1. The result of converting a zero value with a precision of zero is no wide characters. f,F A double argument representing a floating-point number is converted to decimal notation in the style [-]ddd.ddd, where the number of digits after the decimal-point wide character is equal to the precision specification. If the precision is missing, it is taken as 6; if the precision is zero and the # flag is not specified, no decimal-point wide character appears. If a decimal-point wide character appears, at least one digit appears before it. The value is rounded to the appropriate number of digits. A double argument representing an infinity is converted in one of the styles [-]inf or [-]infinity -- which style is implementation-defined. A double argument representing a NaN is converted in one of the styles [-]nan or [-]nan(n-wchar-sequence) -- which style, and the meaning of any n-wchar-sequence, is implementation-defined. The F conversion specifier produces INF, INFINITY, or NAN instead of inf, infinity, or nan, respectively. e,E A double argument representing a floating-point number is converted in the style [-]d.ddd e(+-)dd, where there is one digit (which is nonzero if the argument is nonzero) before the decimal-point wide character and the number of digits after it is equal to the precision; if the precision is missing, it is taken as 6; if the precision is zero and the # flag is not specified, no decimal-point wide character appears. The value is rounded to the appropriate number of digits. The E conversion specifier produces a number with E instead of e introducing the exponent. The exponent always contains at least two digits, and only as many more digits as necessary to represent the exponent. If the value is zero, the exponent is zero. A double argument representing an infinity or NaN is converted in the style of an f or F conversion specifier. g,G A double argument representing a floating-point number is converted in style f or e (or in style F or E in the case of a G conversion specifier), depending on the value converted and the precision. Let P equal the precision if nonzero, 6 if the precision is omitted, or 1 if the precision is zero. Then, if a conversion with style E would have an exponent of X : if P > X >= -4, the conversion is with style f (or F) and precision P - (X + 1). otherwise, the conversion is with style e (or E) and precision P - 1. Finally, unless the # flag is used, any trailing zeros are removed from the fractional portion of the result and the decimal-point wide character is removed if there is no fractional portion remaining. A double argument representing an infinity or NaN is converted in the style of an f or F conversion specifier. a,A A double argument representing a floating-point number is converted in the style [-]0xh.hhhh p(+-)d, where there is one hexadecimal digit (which is nonzero if the argument is a normalized floating-point number and is otherwise unspecified) before the decimal-point wide character and the number of hexadecimal digits after it is equal to the precision; if the precision is missing and FLT_RADIX is a power of 2, then the precision is sufficient for an exact representation of the value; if the precision is missing and FLT_RADIX is not a power of 2, then the precision is sufficient to distinguish values of type double, except that trailing zeros may be omitted; if the precision is zero and the # flag is not specified, no decimal- point wide character appears. The letters abcdef are used for a conversion and the letters ABCDEF for A conversion. The A conversion specifier produces a number with X and P instead of x and p. The exponent always contains at least one digit, and only as many more digits as necessary to represent the decimal exponent of 2. If the value is zero, the exponent is zero. A double argument representing an infinity or NaN is converted in the style of an f or F conversion specifier. c If no l length modifier is present, the int argument is converted to a wide character as if by calling btowc and the resulting wide character is written. If an l length modifier is present, the wint_t argument is converted to wchar_t and written. s If no l length modifier is present, the argument shall be a pointer to the initial element of a character array containing a multibyte character sequence beginning in the initial shift state. Characters from the array are converted as if by repeated calls to the mbrtowc function, with the conversion state described by an mbstate_t object initialized to zero before the first multibyte character is converted, and written up to (but not including) the terminating null wide character. If the precision is specified, no more than that many wide characters are written. If the precision is not specified or is greater than the size of the converted array, the converted array shall contain a null wide character. If an l length modifier is present, the argument shall be a pointer to the initial element of an array of wchar_t type. Wide characters from the array are written up to (but not including) a terminating null wide character. If the precision is specified, no more than that many wide characters are written. If the precision is not specified or is greater than the size of the array, the array shall contain a null wide character. p The argument shall be a pointer to void. The value of the pointer is converted to a sequence of printing wide characters, in an implementation- defined manner. n The argument shall be a pointer to signed integer into which is written the number of wide characters written to the output stream so far by this call to fwprintf. No argument is converted, but one is consumed. If the conversion specification includes any flags, a field width, or a precision, the behavior is undefined. % A % wide character is written. No argument is converted. The complete conversion specification shall be %%.
+[9] If a conversion specification is invalid, the behavior is undefined. If any argument is not the correct type for the corresponding conversion specification, the behavior is undefined.
+[10] In no case does a nonexistent or small field width cause truncation of a field; if the result of a conversion is wider than the field width, the field is expanded to contain the conversion result.
+[11] For a and A conversions, if FLT_RADIX is a power of 2, the value is correctly rounded to a hexadecimal floating number with the given precision.
+Recommended practice:
+[12] For a and A conversions, if FLT_RADIX is not a power of 2 and the result is not exactly representable in the given precision, the result should be one of the two adjacent numbers in hexadecimal floating style with the given precision, with the extra stipulation that the error should have a correct sign for the current rounding direction.
+[13] For e, E, f, F, g, and G conversions, if the number of significant decimal digits is at most DECIMAL_DIG, then the result should be correctly rounded. If the number of significant decimal digits is more than DECIMAL_DIG but the source value is exactly representable with DECIMAL_DIG digits, then the result should be an exact representation with trailing zeros. Otherwise, the source value is bounded by two adjacent decimal strings L < U, both having DECIMAL_DIG significant digits; the value of the resultant decimal string D should satisfy L <= D <= U, with the extra stipulation that the error should have a correct sign for the current rounding direction.
+Returns:
+[14] The fwprintf function returns the number of wide characters transmitted, or a negative value if an output or encoding error occurred.
+Environmental limits:
+[15] The number of wide characters that can be produced by any single conversion shall be at least 4095.
+[16] EXAMPLE To print a date and time in the form ''Sunday, July 3, 10:02'' followed by pi to five decimal places: #include <math.h> #include <stdio.h> #include <wchar.h> /* ... */ wchar_t *weekday, *month; // pointers to wide strings int day, hour, min; fwprintf(stdout, L"%ls, %ls %d, %.2d:%.2d\n", weekday, month, day, hour, min); fwprintf(stdout, L"pi = %.5f\n", 4 * atan(1.0));
+Forward references: the btowc function (7.24.6.1.1), the mbrtowc function (7.24.6.3.2).
+Footnotes:
+281) Note that 0 is taken as a flag, not as the beginning of a field width.
+282) The results of all floating conversions of a negative zero, and of negative values that round to zero, include a minus sign.
+283) When applied to infinite and NaN values, the -, +, and space flag wide characters have their usual meaning; the # and 0 flag wide characters have no effect.
+284) Binary implementations can choose the hexadecimal digit to the left of the decimal-point wide character so that subsequent digits align to nibble (4-bit) boundaries.
+285) The precision p is sufficient to distinguish values of the source type if 16 > b n where b is FLT_RADIX and n is the number of base-b digits in the significand of the source type. A smaller p might suffice depending on the implementation's scheme for determining the digit to the left of the decimal-point wide character.
+286) See ''future library directions'' (7.26.12).
+287) For binary-to-decimal conversion, the result format's values are the numbers representable with the given format specifier. The number of significant digits is determined by the format specifier, and in the case of fixed-point conversion by the source value as well.
+--- CODE ---
+/*
+ * 测试条款：C99 7.24.2.1 The fwprintf function
+ *
+ * 预期行为：
+ *   正向测试：以下使用 fwprintf 的代码应能编译并运行通过，
+ *             输出结果与预期字符串一致（用 assert 校验）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中）应被编译器拒绝。
+ *
+ * 说明：fwprintf 是宽字符版本的 fprintf，写入宽字符流。
+ *       本测试用 tmpfile() 创建临时文件，用 fwprintf 写入，
+ *       再用 fgetwc/fread 读回校验。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <assert.h>
+#include <string.h>
+#include <locale.h>
+
+/* 辅助：把宽字符流内容读回为宽字符串 */
+static size_t read_back(FILE *fp, wchar_t *buf, size_t n)
+{
+    size_t i = 0;
+    int c;
+    rewind(fp);
+    while (i + 1 < n && (c = fgetwc(fp)) != WEOF) {
+        buf[i++] = (wchar_t)c;
+    }
+    buf[i] = L'\0';
+    return i;
+}
+
+int main(void)
+{
+    /* 使用 C locale 以便宽字符与字节一致，便于断言 */
+    setlocale(LC_ALL, "C");
+
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    FILE *fp;
+    wchar_t buf[256];
+
+    /* [1] 原型：int fwprintf(FILE * restrict stream,
+     *                       const wchar_t * restrict format, ...);
+     * 验证返回值为写入的宽字符数。 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    {
+        int n = fwprintf(fp, L"hello");
+        assert(n == 5);                 /* [2] 返回写入的宽字符数 */
+        read_back(fp, buf, 256);
+        assert(wcscmp(buf, L"hello") == 0);
+    }
+    fclose(fp);
+
+    /* [3] 普通宽字符（非 %）原样复制到输出流 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"abc%%def");          /* %% 输出一个 % */
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"abc%def") == 0);
+    fclose(fp);
+
+    /* [4] 转换说明：%d 十进制整数 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%d", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"42") == 0);
+    fclose(fp);
+
+    /* [4] 最小字段宽度：右对齐（默认），空格填充 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%5d]", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[   42]") == 0);
+    fclose(fp);
+
+    /* [4] 精度：d 转换的最小位数 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%.5d", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"00042") == 0);
+    fclose(fp);
+
+    /* [4] 精度：f 转换小数点后的位数 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%.2f", 3.14159);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"3.14") == 0);
+    fclose(fp);
+
+    /* [4] 精度：s 转换的最大宽字符数 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%.3s", L"abcdef");
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"abc") == 0);
+    fclose(fp);
+
+    /* [5] 星号字段宽度：int 参数提供宽度，出现在被转换参数之前 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%*d]", 6, 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[    42]") == 0);
+    fclose(fp);
+
+    /* [5] 星号精度 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%.*d", 5, 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"00042") == 0);
+    fclose(fp);
+
+    /* [5] 负字段宽度 = - 标志 + 正宽度（左对齐） */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%*d]", -6, 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[42    ]") == 0);
+    fclose(fp);
+
+    /* [5] 负精度 = 精度被省略 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%.*d", -1, 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"42") == 0);
+    fclose(fp);
+
+    /* [6] '-' 标志：左对齐 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%-5d]", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[42   ]") == 0);
+    fclose(fp);
+
+    /* [6] '+' 标志：有符号转换总是带符号 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%+d %+d", 42, -42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"+42 -42") == 0);
+    fclose(fp);
+
+    /* [6] ' '（空格）标志：非负时前缀空格 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[% d][% d]", 42, -42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[ 42][-42]") == 0);
+    fclose(fp);
+
+    /* [6] ' ' 与 '+' 同时出现：空格标志被忽略 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%+ d]", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[+42]") == 0);
+    fclose(fp);
+
+    /* [6] '#' 标志：o 转换强制首位为 0 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%#o", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"052") == 0);   /* 42 八进制 = 52 */
+    fclose(fp);
+
+    /* [6] '#' 标志：x 转换非零结果加 0x 前缀 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%#x", 255);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"0xff") == 0);
+    fclose(fp);
+
+    /* [6] '#' 标志：f 转换总是含小数点 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%#.0f", 3.0);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"3.") == 0);
+    fclose(fp);
+
+    /* [6] '0' 标志：用前导零填充到字段宽度 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%05d]", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[00042]") == 0);
+    fclose(fp);
+
+    /* [6] '0' 与 '-' 同时出现：0 标志被忽略 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%0-5d]", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[42   ]") == 0);
+    fclose(fp);
+
+    /* [6] '0' 与精度同时出现（d 转换）：0 标志被忽略 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"[%05.3d]", 42);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"[  042]") == 0);
+    fclose(fp);
+
+    /* [7] 长度修饰符 hh：signed char */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%hhd", (int)(signed char)-1);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"-1") == 0);
+    fclose(fp);
+
+    /* [7] 长度修饰符 h：short int */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%hd", (int)(short)-1234);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"-1234") == 0);
+    fclose(fp);
+
+    /* [7] 长度修饰符 l：long int */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%ld", 123456789L);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"123456789") == 0);
+    fclose(fp);
+
+    /* [7] 长度修饰符 ll：long long int */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%lld", 1234567890123LL);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"1234567890123") == 0);
+    fclose(fp);
+
+    /* [7] 长度修饰符 l 对 s 转换：指向 wchar_t 的指针 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%ls", L"wide");
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"wide") == 0);
+    fclose(fp);
+
+    /* [7] 长度修饰符 l 对 c 转换：wint_t 参数 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%lc", (wint_t)L'A');
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"A") == 0);
+    fclose(fp);
+
+    /* [2] 格式耗尽而参数多余：多余参数被求值但被忽略 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    {
+        int side = 0;
+        fwprintf(fp, L"x", (side = 1, 0));  /* 多余参数被求值 */
+        assert(side == 1);                  /* 确实被求值 */
+        read_back(fp, buf, 256);
+        assert(wcscmp(buf, L"x") == 0);
+    }
+    fclose(fp);
+
+    /* [2] 遇到格式串结尾即返回 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    {
+        int n = fwprintf(fp, L"");
+        assert(n == 0);
+    }
+    fclose(fp);
+
+    /* [4] 精度形式：仅一个句点，精度取 0 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%.d", 0);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"") == 0);      /* 精度 0 且值为 0，输出空 */
+    fclose(fp);
+
+    /* [6] '#' 标志：o 转换，值与精度均为 0 时打印单个 0 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%#.0o", 0);
+    read_back(fp, buf, 256);
+    assert(wcscmp(buf, L"0") == 0);
+    fclose(fp);
+
+    printf("All positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「fwprintf 的第一个参数必须是 FILE *」：
+     * 传入 int，gcc -std=c99 应报 incompatible type 错误。 */
+    fwprintf(42, L"%d", 1);
+
+    /* 违反约束「fwprintf 的第二个参数必须是 const wchar_t *」：
+     * 传入窄字符串字面量（char *），gcc -std=c99 应报 incompatible type 错误。 */
+    fwprintf(stdout, "hello");
+
+    /* 违反约束「fwprintf 的第二个参数必须是 const wchar_t *」：
+     * 传入 int，gcc -std=c99 应报 incompatible type 错误。 */
+    fwprintf(stdout, 123);
+
+    /* 违反约束「fwprintf 的返回类型为 int，不能作为左值赋值」：
+     * 函数调用结果不是左值，赋值应报错。 */
+    fwprintf(stdout, L"x") = 5;
+
+    /* 违反约束「restrict 限定：stream 与 format 均被 restrict 限定」：
+     * 这里演示对 restrict 指针的非法使用——把 restrict 指针赋给非 restrict
+     * 指针本身合法，但下面这种对 const 限定对象的写入违反约束。 */
+    {
+        const wchar_t *fmt = L"%d";
+        *fmt = L'x';        /* 写入 const 限定对象，应报错 */
+    }
+
+#endif
+
+    return 0;
+}

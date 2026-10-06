@@ -1,0 +1,79 @@
+/*
+ * 验证 C99 条款 6.5.12 Bitwise inclusive OR operator
+ * 预期行为：正向测试运行通过，负向测试编译报错。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+int main(void) {
+    /* [1] 语法：inclusive-OR-expression | exclusive-OR-expression */
+    int a = 5;
+    int b = 3;
+    int c = a | b;
+    assert(c == (5 | 3)); /* 5 (101) | 3 (011) = 7 (111) */
+    assert(c == 7);
+
+    /* [4] 语义：按位或结果，当且仅当至少一个对应位被设置时，结果位被设置 */
+    assert((0xF0 | 0x0F) == 0xFF);
+    assert((0x55 | 0xAA) == 0xFF);
+    assert((0x00 | 0x00) == 0x00);
+    assert((0x0F | 0xF0) == 0xFF); /* 交换律 */
+
+    /* [3] 语义：常规算术转换 */
+    /* char 提升为 int */
+    char ch = 0x0F;
+    int i = 0xF0;
+    assert((ch | i) == 0xFF);
+
+    /* short 提升为 int */
+    short sh = 0x0F;
+    assert((sh | i) == 0xFF);
+
+    /* unsigned int 与 int 运算，int 转换为 unsigned int */
+    unsigned int u = 0xFFFFFF0FU;
+    int si = 0x0000000F;
+    /* si 转换为 unsigned int，结果为 unsigned int */
+    unsigned int res_u = u | si;
+    assert(res_u == 0xFFFFFFFFU);
+
+    /* int 负数转换为 unsigned int */
+    int neg_si = -1; /* 全 1 */
+    unsigned int u_zero = 0U;
+    assert((neg_si | u_zero) == 0xFFFFFFFFU);
+
+    /* long 与 int 运算，int 转换为 long */
+    long li = 0xFL;
+    int i2 = 0xF0;
+    assert((li | i2) == 0xFFL);
+
+    /* const 整数类型操作数 */
+    const int ci = 0x0F;
+    assert((ci | 0xF0) == 0xFF);
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+/* [2] 约束：操作数必须为整数类型。浮点数不能参与按位或运算 */
+void test_float(void) {
+    float f = 1.0f;
+    int r = f | 1; /* gcc -std=c99 应报错: invalid operands to binary | */
+}
+
+/* [2] 约束：操作数必须为整数类型。指针不能参与按位或运算 */
+void test_pointer(void) {
+    int *p = (int *)0;
+    int r = p | 1; /* gcc -std=c99 应报错: invalid operands to binary | */
+}
+
+/* [2] 约束：操作数必须为整数类型。结构体不能参与按位或运算 */
+void test_struct(void) {
+    struct S { int x; } s = {1};
+    int r = s | 1; /* gcc -std=c99 应报错: invalid operands to binary | */
+}
+#endif

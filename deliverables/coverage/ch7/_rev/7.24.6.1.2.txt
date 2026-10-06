@@ -1,0 +1,174 @@
+=== TEXT ===
+The wctob function
+Synopsis:
+[1] #include <stdio.h> #include <wchar.h> int wctob(wint_t c);
+Description:
+[2] The wctob function determines whether c corresponds to a member of the extended character set whose multibyte character representation is a single byte when in the initial shift state.
+Returns:
+[3] The wctob function returns EOF if c does not correspond to a multibyte character with length one in the initial shift state. Otherwise, it returns the single-byte representation of that character as an unsigned char converted to an int.
+
+=== CODE ===
+/*
+ * 测试 C99 7.24.6.1.2 —— wctob 函数
+ *
+ * 预期行为：
+ *   正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 条款要点：
+ *   [1] 原型：int wctob(wint_t c);  头文件 <stdio.h> 与 <wchar.h>
+ *   [2] 判定 c 是否对应“初始移位状态下单字节多字节表示”的扩展字符集成员
+ *   [3] 若不对应则返回 EOF；否则返回该字符的单字节表示（unsigned char 转 int）
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <assert.h>
+#include <string.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 验证函数原型可用、返回类型为 int、参数类型为 wint_t */
+static int check_prototype(void)
+{
+    /* 取函数指针，若原型不符则编译失败 */
+    int (*fp)(wint_t) = wctob;
+    (void)fp;
+    return 1;
+}
+
+/* [3] 返回值语义：单字节字符返回其 unsigned char 表示转 int */
+static void test_single_byte_chars(void)
+{
+    /* 在 "C" locale 下，ASCII 字符均为单字节表示 */
+    int r;
+
+    r = wctob((wint_t)L'A');
+    assert(r == (int)(unsigned char)'A');   /* 0x41 */
+
+    r = wctob((wint_t)L'0');
+    assert(r == (int)(unsigned char)'0');   /* 0x30 */
+
+    r = wctob((wint_t)L' ');
+    assert(r == (int)(unsigned char)' ');   /* 0x20 */
+
+    /* 边界：0x00 也是单字节表示 */
+    r = wctob((wint_t)0);
+    assert(r == 0);
+
+    /* 边界：0x7F (DEL) 在 C locale 下是单字节 */
+    r = wctob((wint_t)0x7F);
+    assert(r == 0x7F);
+}
+
+/* [3] 返回值语义：返回值必须是 unsigned char 转 int，即范围 [0,255] 或 EOF */
+static void test_return_range(void)
+{
+    int r;
+    int i;
+
+    for (i = 0; i < 256; i++) {
+        r = wctob((wint_t)i);
+        /* 要么是 EOF，要么落在 unsigned char 可表示范围内 */
+        assert(r == EOF || (r >= 0 && r <= 255));
+    }
+}
+
+/* [3] 不对应单字节表示时返回 EOF */
+static void test_eof_for_non_single_byte(void)
+{
+    int r;
+
+    /* 在 "C" locale 下，超出单字节范围的宽字符不对应单字节表示 */
+    r = wctob((wint_t)0x100);
+    assert(r == EOF);
+
+    r = wctob((wint_t)0x4E2D);   /* 汉字 '中'，C locale 下非单字节 */
+    assert(r == EOF);
+
+    r = wctob((wint_t)0x1F600);  /* 表情符号，非单字节 */
+    assert(r == EOF);
+
+    /* 明显无效的宽字符值 */
+    r = wctob((wint_t)WEOF);
+    assert(r == EOF);
+}
+
+/* [2][3] 与 wctomb 一致性：若 wctob 返回非 EOF，则 wctomb 应产生 1 字节 */
+static void test_consistency_with_wctomb(void)
+{
+    int i;
+    for (i = 0; i < 256; i++) {
+        int b = wctob((wint_t)i);
+        if (b != EOF) {
+            char mb[MB_CUR_MAX];
+            int n = wctomb(mb, (wchar_t)i);
+            assert(n == 1);
+            assert((unsigned char)mb[0] == (unsigned char)b);
+        }
+    }
+}
+
+/* [2] 初始移位状态：在 "C" locale 下初始移位状态为初始态 */
+static void test_initial_shift_state(void)
+{
+    /* 确保处于初始移位状态（C locale 无移位序列） */
+    setlocale(LC_ALL, "C");
+
+    assert(wctob((wint_t)L'a') == (int)(unsigned char)'a');
+    assert(wctob((wint_t)L'z') == (int)(unsigned char)'z');
+    assert(wctob((wint_t)L'~') == (int)(unsigned char)'~');
+}
+
+int main(void)
+{
+    /* [1] 原型检查 */
+    assert(check_prototype() == 1);
+
+    /* [2][3] 语义检查 */
+    test_single_byte_chars();
+    test_return_range();
+    test_eof_for_non_single_byte();
+    test_consistency_with_wctomb();
+    test_initial_shift_state();
+
+    printf("C99 7.24.6.1.2 wctob: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wctob 的参数类型为 wint_t」：
+ * 传入结构体类型，gcc -std=c99 应报 incompatible type 错误。 */
+struct S { int x; } s;
+wctob(s);
+
+/* 违反约束「wctob 的参数类型为 wint_t」：
+ * 传入指针类型，gcc -std=c99 应报 incompatible type 错误。 */
+int *p = 0;
+wctob(p);
+
+/* 违反约束「wctob 的参数个数为 1」：
+ * 传入两个实参，gcc -std=c99 应报 too many arguments 错误。 */
+wctob((wint_t)L'A', (wint_t)L'B');
+
+/* 违反约束「wctob 的参数个数为 1」：
+ * 不传实参，gcc -std=c99 应报 too few arguments 错误。 */
+wctob();
+
+/* 违反约束「wctob 返回 int，不能作为左值赋值」：
+ * 对函数调用结果赋值，gcc -std=c99 应报 lvalue required 错误。 */
+wctob((wint_t)L'A') = 5;
+
+/* 违反约束「wctob 返回 int，不能取地址」：
+ * 对函数调用结果取地址，gcc -std=c99 应报 lvalue required 错误。 */
+int *q = &wctob((wint_t)L'A');
+
+/* 违反约束「wctob 返回 int，不能自增」：
+ * 对函数调用结果自增，gcc -std=c99 应报 lvalue required 错误。 */
+wctob((wint_t)L'A')++;
+
+#endif

@@ -1,0 +1,341 @@
+=== TEXT ===
+The wcsrtombs function
+Synopsis:
+[1] #include <wchar.h> size_t wcsrtombs(char * restrict dst, const wchar_t ** restrict src, size_t len, mbstate_t * restrict ps);
+Description:
+[2] The wcsrtombs function converts a sequence of wide characters from the array indirectly pointed to by src into a sequence of corresponding multibyte characters that begins in the conversion state described by the object pointed to by ps. If dst is not a null pointer, the converted characters are then stored into the array pointed to by dst. Conversion continues up to and including a terminating null wide character, which is also stored. Conversion stops earlier in two cases: when a wide character is reached that does not correspond to a valid multibyte character, or (if dst is not a null pointer) when the next multibyte character would exceed the limit of len total bytes to be stored into the array pointed to by dst. Each conversion takes place as if by a call to the wcrtomb function.
+[3] If dst is not a null pointer, the pointer object pointed to by src is assigned either a null pointer (if conversion stopped due to reaching a terminating null wide character) or the address just past the last wide character converted (if any). If conversion stopped due to reaching a terminating null wide character, the resulting state described is the initial conversion state.
+Returns:
+[4] If conversion stops because a wide character is reached that does not correspond to a valid multibyte character, an encoding error occurs: the wcsrtombs function stores the value of the macro EILSEQ in errno and returns (size_t)(-1); the conversion state is unspecified. Otherwise, it returns the number of bytes in the resulting multibyte character sequence, not including the terminating null character (if any).
+Footnotes:
+302) If conversion stops because a terminating null wide character has been reached, the bytes stored include those necessary to reach the initial shift state immediately before the null byte.
+
+=== CODE ===
+/*
+ * 测试条款：C99 7.24.6.4.2  The wcsrtombs function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型 / 头文件 <wchar.h>
+ *   [2] 转换语义：从 *src 指向的宽字符数组转换到 dst；
+ *       遇到终止空宽字符时转换并存储之；
+ *       两种提前停止情形（无效多字节字符 / 超出 len 字节限制）；
+ *       每次转换等价于 wcrtomb 调用。
+ *   [3] 若 dst 非空，*src 被赋值为 NULL（因终止空宽字符停止）
+ *       或最后一个已转换宽字符之后的位置；
+ *       因终止空宽字符停止时，结果状态为初始转换状态。
+ *   [4] 编码错误：errno = EILSEQ，返回 (size_t)(-1)；
+ *       否则返回结果多字节序列的字节数（不含终止空字符）。
+ *   Footnote 302：因终止空宽字符停止时，存储的字节包含
+ *       在空字节之前立即到达初始移位状态所需的字节。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+#include <errno.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 函数原型存在性检查：通过取函数地址验证签名 */
+static size_t (*fp_wcsrtombs)(char * restrict,
+                              const wchar_t ** restrict,
+                              size_t,
+                              mbstate_t * restrict) = wcsrtombs;
+
+/* [2][3][4] 基本转换：dst 非空，转换整个宽字符串（含终止空宽字符） */
+static void test_basic_conversion(void)
+{
+    mbstate_t st;
+    const wchar_t *src;
+    wchar_t wbuf[16];
+    char dst[64];
+    size_t n;
+
+    memset(&st, 0, sizeof st);
+
+    /* 构造宽字符串 "abc" */
+    wbuf[0] = L'a';
+    wbuf[1] = L'b';
+    wbuf[2] = L'c';
+    wbuf[3] = L'\0';
+
+    src = wbuf;
+    n = wcsrtombs(dst, &src, sizeof dst, &st);
+
+    /* [4] 返回值 = 结果多字节序列字节数，不含终止空字符 */
+    assert(n == 3);
+    /* [2] 转换包含终止空宽字符，也被存储 */
+    assert(dst[0] == 'a');
+    assert(dst[1] == 'b');
+    assert(dst[2] == 'c');
+    assert(dst[3] == '\0');
+
+    /* [3] 因到达终止空宽字符而停止：*src 被赋值为 NULL */
+    assert(src == NULL);
+    /* [3] 结果状态为初始转换状态 */
+    {
+        mbstate_t init;
+        memset(&init, 0, sizeof init);
+        assert(memcmp(&st, &init, sizeof st) == 0);
+    }
+}
+
+/* [2][3] dst 非空但 len 限制导致提前停止：
+ *       *src 指向最后一个已转换宽字符之后的位置 */
+static void test_len_limit_stop(void)
+{
+    mbstate_t st;
+    const wchar_t *src;
+    wchar_t wbuf[16];
+    char dst[64];
+    size_t n;
+
+    memset(&st, 0, sizeof st);
+
+    wbuf[0] = L'x';
+    wbuf[1] = L'y';
+    wbuf[2] = L'z';
+    wbuf[3] = L'\0';
+
+    src = wbuf;
+    /* 只允许 2 字节：转换 'x','y' 后，下一个 'z' 会超出 len */
+    n = wcsrtombs(dst, &src, 2, &st);
+
+    assert(n == 2);
+    assert(dst[0] == 'x');
+    assert(dst[1] == 'y');
+
+    /* [3] 未到达终止空宽字符：*src 指向最后一个已转换宽字符之后 */
+    assert(src == &wbuf[2]);
+    assert(*src == L'z');
+}
+
+/* [2][3] dst 为 NULL：只计算所需字节数，不存储；
+ *       *src 仍按规则更新 */
+static void test_null_dst(void)
+{
+    mbstate_t st;
+    const wchar_t *src;
+    wchar_t wbuf[16];
+    size_t n;
+
+    memset(&st, 0, sizeof st);
+
+    wbuf[0] = L'h';
+    wbuf[1] = L'i';
+    wbuf[2] = L'\0';
+
+    src = wbuf;
+    /* dst == NULL：不存储，仅返回字节数（不含终止空字符） */
+    n = wcsrtombs(NULL, &src, 0, &st);
+
+    assert(n == 2);
+    /* [3] 到达终止空宽字符：*src 被赋值为 NULL */
+    assert(src == NULL);
+}
+
+/* [2][4] 编码错误：宽字符不对应有效多字节字符时，
+ *       errno = EILSEQ，返回 (size_t)(-1) */
+static void test_encoding_error(void)
+{
+    mbstate_t st;
+    const wchar_t *src;
+    wchar_t wbuf[4];
+    char dst[64];
+    size_t n;
+
+    memset(&st, 0, sizeof st);
+
+    /* 使用一个几乎肯定无效的宽字符值。
+     * 在 C locale 下，任何 > 0x7F 的宽字符通常无法转换。
+     * 这里选用一个超出常见编码范围的码点。 */
+    wbuf[0] = (wchar_t)0x10FFFF; /* 通常无效 */
+    wbuf[1] = L'\0';
+
+    src = wbuf;
+    errno = 0;
+    n = wcsrtombs(dst, &src, sizeof dst, &st);
+
+    /* [4] 编码错误：返回 (size_t)(-1)，errno = EILSEQ */
+    if (n == (size_t)(-1)) {
+        assert(errno == EILSEQ);
+    }
+    /* 若实现恰好能转换该码点（例如 UTF-8 locale），
+     * 则跳过此断言，不视为失败。 */
+}
+
+/* [2] 每次转换等价于 wcrtomb 调用：逐字符比较结果 */
+static void test_equivalence_with_wcrtomb(void)
+{
+    mbstate_t st1, st2;
+    const wchar_t *src;
+    wchar_t wbuf[8];
+    char dst1[64], dst2[64];
+    size_t n1, n2, i;
+
+    memset(&st1, 0, sizeof st1);
+    memset(&st2, 0, sizeof st2);
+
+    wbuf[0] = L'A';
+    wbuf[1] = L'B';
+    wbuf[2] = L'\0';
+
+    src = wbuf;
+    n1 = wcsrtombs(dst1, &src, sizeof dst1, &st1);
+
+    /* 用 wcrtomb 逐字符转换，得到 dst2 */
+    {
+        const wchar_t *p = wbuf;
+        char *q = dst2;
+        size_t total = 0;
+        while (*p) {
+            size_t k = wcrtomb(q, *p, &st2);
+            if (k == (size_t)(-1)) break;
+            q += k;
+            total += k;
+            p++;
+        }
+        /* 转换终止空宽字符 */
+        {
+            size_t k = wcrtomb(q, L'\0', &st2);
+            if (k != (size_t)(-1)) {
+                q += k;
+                total += k;
+            }
+        }
+        n2 = total;
+    }
+
+    assert(n1 == n2);
+    assert(memcmp(dst1, dst2, n1 + 1) == 0);
+}
+
+/* [Footnote 302] 因终止空宽字符停止时，存储的字节包含
+ * 在空字节之前立即到达初始移位状态所需的字节。
+ * 在无移位状态的编码（如 UTF-8 / ASCII）下，这等价于
+ * 终止空字节本身；此处验证终止空字节确实被存储。 */
+static void test_footnote_302(void)
+{
+    mbstate_t st;
+    const wchar_t *src;
+    wchar_t wbuf[4];
+    char dst[64];
+    size_t n;
+
+    memset(&st, 0, sizeof st);
+
+    wbuf[0] = L'Q';
+    wbuf[1] = L'\0';
+
+    src = wbuf;
+    n = wcsrtombs(dst, &src, sizeof dst, &st);
+
+    assert(n == 1);
+    assert(dst[0] == 'Q');
+    /* 终止空字节被存储 */
+    assert(dst[1] == '\0');
+    /* 结果状态为初始转换状态 */
+    {
+        mbstate_t init;
+        memset(&init, 0, sizeof init);
+        assert(memcmp(&st, &init, sizeof st) == 0);
+    }
+}
+
+int main(void)
+{
+    /* 使用 C locale 以保证行为可预测 */
+    setlocale(LC_ALL, "C");
+
+    /* 验证函数指针已正确初始化（原型存在） */
+    assert(fp_wcsrtombs == wcsrtombs);
+
+    test_basic_conversion();
+    test_len_limit_stop();
+    test_null_dst();
+    test_encoding_error();
+    test_equivalence_with_wcrtomb();
+    test_footnote_302();
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wcsrtombs 的第一个参数类型为 char * restrict」：
+ * 传入 int * 而非 char *，gcc -std=c99 应报错
+ * （incompatible pointer type / passing argument 1）。 */
+{
+    int *bad_dst;
+    const wchar_t *src;
+    mbstate_t st;
+    wcsrtombs(bad_dst, &src, 0, &st);
+}
+
+/* 违反约束「第二个参数类型为 const wchar_t ** restrict」：
+ * 传入 wchar_t ** 而非 const wchar_t **，gcc -std=c99 应报错
+ * （discards qualifier / incompatible pointer type）。 */
+{
+    char dst[8];
+    wchar_t *src;
+    mbstate_t st;
+    wcsrtombs(dst, &src, sizeof dst, &st);
+}
+
+/* 违反约束「第三个参数类型为 size_t」：
+ * 传入指针而非整数，gcc -std=c99 应报错
+ * （incompatible type for argument 3）。 */
+{
+    char dst[8];
+    const wchar_t *src;
+    mbstate_t st;
+    wcsrtombs(dst, &src, dst, &st);
+}
+
+/* 违反约束「第四个参数类型为 mbstate_t * restrict」：
+ * 传入 int * 而非 mbstate_t *，gcc -std=c99 应报错
+ * （incompatible pointer type）。 */
+{
+    char dst[8];
+    const wchar_t *src;
+    int *bad_ps;
+    wcsrtombs(dst, &src, sizeof dst, bad_ps);
+}
+
+/* 违反约束「参数个数必须为 4」：
+ * 少传参数，gcc -std=c99 应报错（too few arguments）。 */
+{
+    char dst[8];
+    const wchar_t *src;
+    wcsrtombs(dst, &src);
+}
+
+/* 违反约束「参数个数必须为 4」：
+ * 多传参数，gcc -std=c99 应报错（too many arguments）。 */
+{
+    char dst[8];
+    const wchar_t *src;
+    mbstate_t st;
+    wcsrtombs(dst, &src, sizeof dst, &st, 0);
+}
+
+/* 违反约束「返回值类型为 size_t，不可作为左值赋值」：
+ * 对函数调用结果赋值，gcc -std=c99 应报错（lvalue required）。 */
+{
+    char dst[8];
+    const wchar_t *src;
+    mbstate_t st;
+    wcsrtombs(dst, &src, sizeof dst, &st) = 0;
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,173 @@
+/*
+ * 测试 C99 7.25.3.2 —— 可扩展宽字符大小写映射函数 wctrans / towctrans
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，调用 wctrans / towctrans 的代码应能编译并运行通过。
+ *   负向测试：违反约束的代码（如参数类型错误、未声明标识符等）应导致编译报错。
+ *
+ * 说明：本条款只规定 wctrans 与 towctrans 提供“可扩展的宽字符映射”，
+ *       并声明其大小写映射等价于 7.25.3.1 中函数（towlower/towupper）所做的映射。
+ *       因此正向测试聚焦于：
+ *         - 头文件 <wctype.h> 中声明了这两个函数；
+ *         - wctrans 接受字符串名（"tolower"/"toupper"）返回 wctrans_t；
+ *         - towctrans 接受 wint_t 与 wctrans_t，返回 wint_t；
+ *         - 对 "tolower"/"toupper" 的映射结果与 towlower/towupper 一致（[1] 的等价性要求）。
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] wctrans 与 towctrans 的声明与基本可用性 */
+static void test_declarations_and_basic_use(void)
+{
+    /* wctrans 接受 const char *，返回 wctrans_t */
+    wctrans_t tr_lower = wctrans("tolower");
+    wctrans_t tr_upper = wctrans("toupper");
+
+    /* 标准要求这两个名字必须被支持（C99 7.25.3.2.1 / 7.25.3.2.2 的语义） */
+    assert(tr_lower != (wctrans_t)0);
+    assert(tr_upper != (wctrans_t)0);
+
+    /* towctrans 接受 (wint_t, wctrans_t)，返回 wint_t */
+    wint_t r1 = towctrans(L'A', tr_lower);
+    wint_t r2 = towctrans(L'a', tr_upper);
+
+    /* 结果类型应为 wint_t（整型），可参与算术比较 */
+    assert(r1 == L'a');
+    assert(r2 == L'A');
+}
+
+/* [1] 等价性：towctrans(..., wctrans("tolower")) 等价于 towlower */
+static void test_equivalence_with_towlower(void)
+{
+    wctrans_t tr_lower = wctrans("tolower");
+    assert(tr_lower != (wctrans_t)0);
+
+    /* 覆盖若干典型宽字符：大写字母、小写字母、数字、非字母 */
+    const wint_t samples[] = {
+        L'A', L'Z', L'a', L'z', L'0', L'9', L' ', L'!', L'\t', L'\n'
+    };
+    size_t n = sizeof(samples) / sizeof(samples[0]);
+    for (size_t i = 0; i < n; ++i) {
+        wint_t via_towctrans = towctrans(samples[i], tr_lower);
+        wint_t via_towlower  = towlower(samples[i]);
+        assert(via_towctrans == via_towlower);
+    }
+}
+
+/* [1] 等价性：towctrans(..., wctrans("toupper")) 等价于 towupper */
+static void test_equivalence_with_towupper(void)
+{
+    wctrans_t tr_upper = wctrans("toupper");
+    assert(tr_upper != (wctrans_t)0);
+
+    const wint_t samples[] = {
+        L'A', L'Z', L'a', L'z', L'0', L'9', L' ', L'!', L'\t', L'\n'
+    };
+    size_t n = sizeof(samples) / sizeof(samples[0]);
+    for (size_t i = 0; i < n; ++i) {
+        wint_t via_towctrans = towctrans(samples[i], tr_upper);
+        wint_t via_towupper  = towupper(samples[i]);
+        assert(via_towctrans == via_towupper);
+    }
+}
+
+/* [1] 可扩展性：wctrans 对未知名字返回 0（C99 7.25.3.2.1 语义） */
+static void test_unknown_name_returns_zero(void)
+{
+    /* 未定义的映射名应返回 0（空指针值转换而来的 wctrans_t） */
+    wctrans_t tr = wctrans("this_is_not_a_valid_mapping_name");
+    assert(tr == (wctrans_t)0);
+}
+
+/* [1] 往返一致性：tolower 后再 toupper 应回到原大写字母 */
+static void test_roundtrip(void)
+{
+    wctrans_t tr_lower = wctrans("tolower");
+    wctrans_t tr_upper = wctrans("toupper");
+    assert(tr_lower != (wctrans_t)0);
+    assert(tr_upper != (wctrans_t)0);
+
+    wint_t c = L'Q';
+    wint_t lower = towctrans(c, tr_lower);
+    wint_t back  = towctrans(lower, tr_upper);
+    assert(lower == L'q');
+    assert(back == L'Q');
+}
+
+int main(void)
+{
+    test_declarations_and_basic_use();
+    test_equivalence_with_towlower();
+    test_equivalence_with_towupper();
+    test_unknown_name_returns_zero();
+    test_roundtrip();
+
+    printf("C99 7.25.3.2 positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wctrans 的参数类型为 const char *」：
+ * 传入 wchar_t* 而非 char*，gcc -std=c99 应报 incompatible pointer type 错误。 */
+void neg_wctrans_wrong_arg_type(void)
+{
+    const wchar_t *name = L"tolower";
+    wctrans_t tr = wctrans(name);   /* 期望：编译错误 */
+    (void)tr;
+}
+
+/* 违反约束「towctrans 的第一个参数类型为 wint_t」：
+ * 传入结构体类型，gcc -std=c99 应报 incompatible type 错误。 */
+struct NotWintT { int x; };
+void neg_towctrans_wrong_first_arg(void)
+{
+    struct NotWintT v;
+    wctrans_t tr = wctrans("tolower");
+    wint_t r = towctrans(v, tr);    /* 期望：编译错误 */
+    (void)r;
+}
+
+/* 违反约束「towctrans 的第二个参数类型为 wctrans_t」：
+ * 传入 const char *，gcc -std=c99 应报 incompatible type 错误。 */
+void neg_towctrans_wrong_second_arg(void)
+{
+    wint_t r = towctrans(L'A', "tolower");  /* 期望：编译错误 */
+    (void)r;
+}
+
+/* 违反约束「wctrans 返回 wctrans_t，不能直接当作整型参与算术」：
+ * 对 wctrans_t 做乘法，gcc -std=c99 应报 invalid operands 错误。 */
+void neg_wctrans_t_arithmetic(void)
+{
+    wctrans_t tr = wctrans("tolower");
+    wctrans_t bad = tr * 2;         /* 期望：编译错误 */
+    (void)bad;
+}
+
+/* 违反约束「towctrans 返回 wint_t，不能赋值给结构体」：
+ * gcc -std=c99 应报 incompatible types 错误。 */
+void neg_towctrans_result_to_struct(void)
+{
+    struct NotWintT v;
+    wctrans_t tr = wctrans("tolower");
+    v = towctrans(L'A', tr);        /* 期望：编译错误 */
+    (void)v;
+}
+
+/* 违反约束「调用函数前必须有声明」：
+ * 未包含 <wctype.h> 且未声明 wctrans，gcc -std=c99 应报 implicit declaration 错误。 */
+void neg_undeclared_wctrans(void)
+{
+    /* 假设此处没有 <wctype.h> 的声明 */
+    wctrans_t tr = wctrans("tolower");  /* 期望：编译错误（隐式声明） */
+    (void)tr;
+}
+
+#endif /* 负向测试结束 */

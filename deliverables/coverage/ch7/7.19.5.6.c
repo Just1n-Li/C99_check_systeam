@@ -1,0 +1,191 @@
+/*
+ * 测试条款：C99 7.19.5.6  The setvbuf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int setvbuf(FILE * restrict stream, char * restrict buf,
+ *                        int mode, size_t size);
+ *   [2] 描述：只能在流与打开的文件关联之后、且在任何其他操作之前调用；
+ *             mode 取值 _IOFBF / _IOLBF / _IONBF；
+ *             buf 非空则使用用户提供的数组，size 指定其大小；
+ *             buf 为空则由实现分配缓冲区，size 可决定其大小；
+ *             数组内容在任何时刻都是不确定的。
+ *   [3] 返回值：成功返回 0；mode 非法或请求无法满足时返回非零。
+ *   Footnote 239：缓冲区生命周期至少与打开的流一样长。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与标准原型一致 */
+static int (*proto_check)(FILE * restrict, char * restrict, int, size_t)
+    = setvbuf;
+
+/* [2] 用户提供的缓冲区，静态存储期，生命周期长于流（Footnote 239） */
+static char user_buf[BUFSIZ];
+
+int main(void)
+{
+    FILE *fp;
+    int rc;
+
+    /* [1] 原型赋值成功 */
+    assert(proto_check == setvbuf);
+
+    /* ---------- 测试 1：_IOFBF 全缓冲，用户提供缓冲区 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    /* [2] 在流与打开文件关联之后、任何其他操作之前调用 setvbuf */
+    rc = setvbuf(fp, user_buf, _IOFBF, sizeof user_buf);
+    /* [3] 成功返回 0 */
+    assert(rc == 0);
+    /* 之后才进行 I/O 操作 */
+    assert(fputs("hello full buffered\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 2：_IOLBF 行缓冲，用户提供缓冲区 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    rc = setvbuf(fp, user_buf, _IOLBF, sizeof user_buf);
+    assert(rc == 0);
+    assert(fputs("hello line buffered\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 3：_IONBF 无缓冲，buf 为 NULL ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    /* [2] buf 为空指针：由实现分配缓冲区，size 可决定其大小 */
+    rc = setvbuf(fp, NULL, _IONBF, 0);
+    assert(rc == 0);
+    assert(fputs("hello unbuffered\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 4：buf 为 NULL 且 size 非零（实现分配缓冲区） ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    rc = setvbuf(fp, NULL, _IOFBF, 4096);
+    assert(rc == 0);
+    assert(fputs("impl allocated buffer\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 5：mode 非法时返回非零 [3] ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    /* 使用一个非 _IOFBF/_IOLBF/_IONBF 的 mode 值 */
+    rc = setvbuf(fp, NULL, 12345, 0);
+    /* [3] mode 非法 -> 返回非零 */
+    assert(rc != 0);
+    /* 失败的 setvbuf 之后仍可正常使用该流 */
+    assert(fputs("after failed setvbuf\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 6：失败的 setvbuf 之后仍可再次调用 setvbuf [2] ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    rc = setvbuf(fp, NULL, 999, 0);   /* 失败 */
+    assert(rc != 0);
+    /* [2] “other than an unsuccessful call to setvbuf” —— 失败的调用不算
+     *     其他操作，因此仍允许再次调用 setvbuf */
+    rc = setvbuf(fp, user_buf, _IOFBF, sizeof user_buf);
+    assert(rc == 0);
+    assert(fputs("retry ok\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 7：缓冲区内容不确定 [2] ---------- */
+    /* 条款说明“数组内容在任何时刻都是不确定的”，因此我们只验证
+     * 使用该缓冲区不会导致程序崩溃或断言失败，不检查其内容。 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    memset(user_buf, 0xAA, sizeof user_buf);
+    rc = setvbuf(fp, user_buf, _IOFBF, sizeof user_buf);
+    assert(rc == 0);
+    assert(fputs("indeterminate content\n", fp) >= 0);
+    assert(fflush(fp) == 0);
+    assert(fclose(fp) == 0);
+
+    /* ---------- 测试 8：stdout 上使用 setvbuf（标准流） ---------- */
+    /* 注意：stdout 可能已被使用过，这里仅测试调用形式与返回值类型。
+     * 为避免干扰测试输出，使用 _IONBF 并忽略返回值。 */
+    (void)setvbuf(stdout, NULL, _IONBF, 0);
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束 [1]：setvbuf 的第一个参数类型为 FILE * restrict，
+ * 传入 int 类型实参应报错（参数类型不兼容）。
+ * 期望：gcc -std=c99 报 "incompatible type for argument 1" 或类似错误。 */
+void bad_arg1(void)
+{
+    int x = 0;
+    setvbuf(x, NULL, _IOFBF, 0);
+}
+
+/* 违反约束 [1]：第二个参数类型为 char * restrict，
+ * 传入 int * 应报错（指针类型不兼容）。
+ * 期望：gcc -std=c99 报 "incompatible pointer type" 或类似错误。 */
+void bad_arg2(FILE *fp)
+{
+    int buf[16];
+    setvbuf(fp, buf, _IOFBF, sizeof buf);
+}
+
+/* 违反约束 [1]：第三个参数类型为 int，
+ * 传入指针应报错（参数类型不兼容）。
+ * 期望：gcc -std=c99 报 "incompatible type for argument 3" 或类似错误。 */
+void bad_arg3(FILE *fp)
+{
+    char *mode = "_IOFBF";
+    setvbuf(fp, NULL, mode, 0);
+}
+
+/* 违反约束 [1]：第四个参数类型为 size_t，
+ * 传入结构体应报错（参数类型不兼容）。
+ * 期望：gcc -std=c99 报 "incompatible type for argument 4" 或类似错误。 */
+struct S { int a; };
+void bad_arg4(FILE *fp)
+{
+    struct S s;
+    setvbuf(fp, NULL, _IOFBF, s);
+}
+
+/* 违反约束 [1]：setvbuf 返回 int，不能赋值给结构体。
+ * 期望：gcc -std=c99 报 "incompatible types when assigning" 或类似错误。 */
+void bad_return(FILE *fp)
+{
+    struct S s;
+    s = setvbuf(fp, NULL, _IOFBF, 0);
+}
+
+/* 违反约束 [1]：setvbuf 需要 4 个实参，少传应报错。
+ * 期望：gcc -std=c99 报 "too few arguments to function 'setvbuf'"。 */
+void bad_arity(FILE *fp)
+{
+    setvbuf(fp, NULL, _IOFBF);
+}
+
+/* 违反约束 [1]：setvbuf 需要 4 个实参，多传应报错。
+ * 期望：gcc -std=c99 报 "too many arguments to function 'setvbuf'"。 */
+void bad_arity2(FILE *fp)
+{
+    setvbuf(fp, NULL, _IOFBF, 0, 0);
+}
+
+#endif /* 负向测试结束 */

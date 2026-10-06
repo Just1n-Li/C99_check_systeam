@@ -1,0 +1,171 @@
+/*
+ * 测试条款：C99 7.19.6.5  The snprintf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型（Synopsis）
+ *   [2] 描述（Description）：等价于 fprintf 但写入数组；n==0 时不写且 s 可为 NULL；
+ *       超出 n-1 的字符被丢弃；实际写入字符末尾写 '\0'；重叠复制为 UB（不作负向测试）。
+ *   [3] 返回值（Returns）：返回“若 n 足够大本应写入的字符数”（不含终止 '\0'）；
+ *       编码错误返回负值；当且仅当返回值非负且小于 n 时输出被完整写入。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 函数原型：包含 <stdio.h> 后 snprintf 可用，且返回 int。
+ *     这里通过取函数指针类型来静态验证原型签名（restrict 不参与类型比较）。 */
+static int (*proto_check)(char * restrict, size_t, const char * restrict, ...) = snprintf;
+
+int main(void)
+{
+    char buf[64];
+    int ret;
+
+    /* [1] 原型可用性检查 */
+    assert(proto_check == snprintf);
+
+    /* [2] 基本行为：等价于 fprintf，但写入数组。
+     *     缓冲区足够大时，完整写入并返回写入字符数（不含 '\0'）。 */
+    memset(buf, 'X', sizeof buf);
+    ret = snprintf(buf, sizeof buf, "hello %s %d", "world", 42);
+    assert(ret == (int)strlen("hello world 42"));   /* [3] 返回值 = 本应写入的字符数 */
+    assert(strcmp(buf, "hello world 42") == 0);     /* [2] 内容正确 */
+    assert(buf[ret] == '\0');                       /* [2] 末尾写入 '\0' */
+
+    /* [3] 返回值非负且小于 n  =>  输出被完整写入 */
+    assert(ret >= 0 && (size_t)ret < sizeof buf);
+
+    /* [2] 截断行为：n 小于所需长度时，只写入 n-1 个字符 + '\0'，
+     *     超出 n-1 的字符被丢弃，但返回值仍是“本应写入”的完整长度。 */
+    memset(buf, 'X', sizeof buf);
+    ret = snprintf(buf, 5, "%s", "abcdefgh");       /* 需要 8 个字符 + '\0' */
+    assert(ret == 8);                               /* [3] 返回本应写入的字符数 */
+    assert(strcmp(buf, "abcd") == 0);               /* [2] 只保留前 n-1=4 个字符 */
+    assert(buf[4] == '\0');                         /* [2] 第 n 个位置写 '\0' */
+    assert(buf[5] == 'X');                          /* [2] 其余位置未被写入 */
+
+    /* [3] 返回值 >= n  =>  输出被截断（未完整写入） */
+    assert(ret >= 5);
+
+    /* [2] n == 0：不写任何内容，s 可以为 NULL 指针。 */
+    ret = snprintf(NULL, 0, "%d-%d", 123, 456);
+    assert(ret == (int)strlen("123-456"));          /* [3] 仍返回本应写入的字符数 */
+
+    /* [2] n == 0 且 s 非 NULL：同样不写任何内容（缓冲区保持不变）。 */
+    memset(buf, 'Y', sizeof buf);
+    ret = snprintf(buf, 0, "should not be written");
+    assert(ret == (int)strlen("should not be written"));
+    assert(buf[0] == 'Y');                          /* 未写入任何字符 */
+
+    /* [2] n == 1：只能写入终止 '\0'，其余全部丢弃。 */
+    memset(buf, 'Z', sizeof buf);
+    ret = snprintf(buf, 1, "abc");
+    assert(ret == 3);                               /* [3] 本应写入 3 个字符 */
+    assert(buf[0] == '\0');                         /* [2] 只写了 '\0' */
+    assert(buf[1] == 'Z');                          /* 其余未动 */
+
+    /* [2] 空格式串：写入 0 个字符，仅写 '\0'，返回 0。 */
+    memset(buf, 'W', sizeof buf);
+    ret = snprintf(buf, sizeof buf, "");
+    assert(ret == 0);
+    assert(buf[0] == '\0');
+
+    /* [3] 返回值恰好等于 n-1 时，仍算“完整写入”（ret < n 成立）。 */
+    memset(buf, 'Q', sizeof buf);
+    ret = snprintf(buf, 4, "abc");                  /* 3 个字符 + '\0'，恰好占满 4 字节 */
+    assert(ret == 3);
+    assert(ret < 4);
+    assert(strcmp(buf, "abc") == 0);
+
+    /* [2] 与 fprintf 等价性：用 snprintf 与 sprintf 对同一格式比较结果。 */
+    {
+        char a[64], b[64];
+        int ra = snprintf(a, sizeof a, "[%05d|%-4s|%x]", 7, "ab", 255);
+        int rb = sprintf(b, "[%05d|%-4s|%x]", 7, "ab", 255);
+        assert(ra == rb);
+        assert(strcmp(a, b) == 0);
+    }
+
+    /* [2] 变参：省略号部分按格式串消费，多余实参被忽略。 */
+    ret = snprintf(buf, sizeof buf, "%d", 1, 2, 3);
+    assert(ret == 1);
+    assert(strcmp(buf, "1") == 0);
+
+    /* [2] 无原型调用时的默认实参提升：char -> int，float -> double。
+     *     这里通过一个无原型声明调用 snprintf，验证提升后仍能正确工作。 */
+    {
+        int (*noproto)();               /* 无原型函数指针 */
+        noproto = (int (*)())snprintf;  /* 转换到无原型类型 */
+        memset(buf, 'P', sizeof buf);
+        ret = noproto(buf, sizeof buf, "%c %f", (char)'A', (float)1.5);
+        assert(ret == (int)strlen("A 1.500000"));
+        assert(strcmp(buf, "A 1.500000") == 0);
+    }
+
+    /* [2] 重叠复制为 UB，此处不做测试（UB 不属于负向约束测试）。 */
+
+    printf("All positive tests for C99 7.19.6.5 passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「snprintf 的第一个参数类型为 char *（restrict 限定）」：
+ * 传入 const char * 会丢弃 const 限定，gcc -std=c99 应报错
+ * （discards qualifiers / passing argument 1 discards 'const' qualifier）。 */
+{
+    const char *cs = "x";
+    snprintf(cs, 10, "%d", 1);
+}
+
+/* 违反约束「snprintf 的第二个参数类型为 size_t」：
+ * 传入指针类型无法隐式转换为 size_t，gcc -std=c99 应报错
+ * （incompatible type / makes integer from pointer）。 */
+{
+    char b[10];
+    int *p = 0;
+    snprintf(b, p, "%d", 1);
+}
+
+/* 违反约束「snprintf 的第三个参数类型为 const char *」：
+ * 传入 int 无法隐式转换为指针，gcc -std=c99 应报错
+ * （incompatible type / makes pointer from integer）。 */
+{
+    char b[10];
+    snprintf(b, sizeof b, 12345);
+}
+
+/* 违反约束「snprintf 至少需要 3 个固定参数」：
+ * 参数过少，gcc -std=c99 应报错（too few arguments to function 'snprintf'）。 */
+{
+    char b[10];
+    snprintf(b, sizeof b);
+}
+
+/* 违反约束「snprintf 返回 int，不能当作结构体等非标量使用」：
+ * 对返回值取成员，gcc -std=c99 应报错（request for member in something
+ * not a structure or union）。 */
+{
+    char b[10];
+    snprintf(b, sizeof b, "%d", 1).x;
+}
+
+/* 违反约束「函数调用结果不是左值，不能赋值」：
+ * 对 snprintf 的返回值赋值，gcc -std=c99 应报错（lvalue required as
+ * left operand of assignment）。 */
+{
+    char b[10];
+    snprintf(b, sizeof b, "%d", 1) = 0;
+}
+
+#endif

@@ -1,0 +1,160 @@
+/*
+ * 测试 C99 7.21.3.1 —— strcat 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：char *strcat(char * restrict s1, const char * restrict s2);
+ *   [2] 语义：把 s2（含终止空字符）追加到 s1 末尾；s2 首字符覆盖 s1 末尾的 '\0'；
+ *            重叠时行为未定义（UB，不作为负向测试）。
+ *   [3] 返回值：返回 s1 的值。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与标准原型一致 */
+static char *(*fp_strcat)(char *restrict, const char *restrict) = strcat;
+
+int main(void)
+{
+    /* [1] 头文件 <string.h> 提供声明，且返回类型为 char * */
+    {
+        char buf[64];
+        char *ret;
+        strcpy(buf, "Hello");
+        ret = strcat(buf, ", World");
+        /* [3] 返回值等于 s1（即 buf 的首地址） */
+        assert(ret == buf);
+        /* [2] 追加结果正确 */
+        assert(strcmp(buf, "Hello, World") == 0);
+    }
+
+    /* [2] s2 的首字符覆盖 s1 末尾的 '\0'，且 s2 的终止空字符也被复制 */
+    {
+        char s1[32] = "abc";      /* 末尾有 '\0' */
+        char s2[]   = "XYZ";      /* 含终止 '\0' */
+        char *r = strcat(s1, s2);
+        assert(r == s1);
+        /* 结果应为 "abcXYZ"，长度 6 */
+        assert(strcmp(s1, "abcXYZ") == 0);
+        assert(strlen(s1) == 6);
+        /* 确认终止空字符存在 */
+        assert(s1[6] == '\0');
+        /* 确认 s2 未被修改（const 语义） */
+        assert(strcmp(s2, "XYZ") == 0);
+    }
+
+    /* [2] 追加空字符串：s2 只有终止空字符，s1 保持不变 */
+    {
+        char s1[16] = "keep";
+        char s2[]   = "";
+        char *r = strcat(s1, s2);
+        assert(r == s1);
+        assert(strcmp(s1, "keep") == 0);
+    }
+
+    /* [2] 追加到空字符串：s1 为空，结果等于 s2 的内容 */
+    {
+        char s1[16] = "";
+        char s2[]   = "fill";
+        char *r = strcat(s1, s2);
+        assert(r == s1);
+        assert(strcmp(s1, "fill") == 0);
+    }
+
+    /* [2] 连续多次追加，验证返回值可链式使用 */
+    {
+        char s1[64] = "a";
+        char *r = strcat(strcat(strcat(s1, "b"), "c"), "d");
+        assert(r == s1);
+        assert(strcmp(s1, "abcd") == 0);
+    }
+
+    /* [1] 通过函数指针调用，验证原型兼容 */
+    {
+        char s1[32] = "ptr";
+        char s2[]   = "-call";
+        char *r = fp_strcat(s1, s2);
+        assert(r == s1);
+        assert(strcmp(s1, "ptr-call") == 0);
+    }
+
+    /* [2] 使用 restrict 限定的实参（restrict 只影响优化，不影响语义） */
+    {
+        char s1[32] = "res";
+        const char *restrict s2 = "trict";
+        char *r = strcat(s1, s2);
+        assert(r == s1);
+        assert(strcmp(s1, "restrict") == 0);
+    }
+
+    printf("All positive tests for C99 7.21.3.1 (strcat) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「s1 必须为 char * 类型（指向可修改字符数组）」：
+ * 把字符串字面量（类型为 char[N]，但修改它是 UB；此处更直接的是
+ * 传入 const char * 会因丢弃 const 限定而报错）。
+ * 期望：gcc -std=c99 报 "passing argument 1 of 'strcat' discards
+ *       'const' qualifier from pointer target type" 或类似错误。 */
+{
+    const char *s1 = "abc";
+    strcat(s1, "def");   /* 错误：s1 为 const char *，不能传给 char * */
+}
+
+/* 违反约束「s2 必须为 const char * 类型（指向字符串）」：
+ * 传入非指针类型（如 int）会因类型不匹配而报错。
+ * 期望：gcc -std=c99 报 "passing argument 2 of 'strcat' makes pointer
+ *       from integer without a cast" 或类型不兼容错误。 */
+{
+    char s1[16] = "abc";
+    strcat(s1, 42);      /* 错误：第二个实参应为指针，不能是 int */
+}
+
+/* 违反约束「实参个数必须为 2」：
+ * 少传一个实参。
+ * 期望：gcc -std=c99 报 "too few arguments to function 'strcat'"。 */
+{
+    char s1[16] = "abc";
+    strcat(s1);          /* 错误：缺少第二个实参 */
+}
+
+/* 违反约束「实参个数必须为 2」：
+ * 多传一个实参。
+ * 期望：gcc -std=c99 报 "too many arguments to function 'strcat'"。 */
+{
+    char s1[16] = "abc";
+    strcat(s1, "x", "y"); /* 错误：多传了第三个实参 */
+}
+
+/* 违反约束「返回值类型为 char *，不能赋给不兼容类型」：
+ * 把 char * 赋给 int 会因类型不兼容而报错（在严格模式下）。
+ * 期望：gcc -std=c99 -Werror 报 "assignment makes integer from pointer
+ *       without a cast" 或类似错误。 */
+{
+    char s1[16] = "abc";
+    int n = strcat(s1, "def");  /* 错误：char * 赋给 int */
+    (void)n;
+}
+
+/* 违反约束「strcat 的声明必须来自 <string.h>，且原型固定」：
+ * 用不兼容的原型重新声明 strcat（返回 int，参数不同），
+ * 与标准原型冲突。
+ * 期望：gcc -std=c99 报 "conflicting types for 'strcat'"。 */
+{
+    int strcat(char *s1, const char *s2);  /* 错误：与标准原型冲突 */
+    char s1[16] = "abc";
+    (void)strcat(s1, "def");
+}
+
+#endif /* 负向测试结束 */

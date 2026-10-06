@@ -1,0 +1,126 @@
+=== TEXT ===
+The iswdigit function
+Synopsis:
+[1] #include <wctype.h> int iswdigit(wint_t wc);
+Description:
+[2] The iswdigit function tests for any wide character that corresponds to a decimal-digit character (as defined in 5.2.1).
+
+=== CODE ===
+/*
+ * 测试目标：C99 7.25.2.1.5 —— iswdigit 函数
+ *
+ * 条款要点：
+ *   [1] 头文件 <wctype.h>，原型 int iswdigit(wint_t wc);
+ *   [2] 测试宽字符是否对应十进制数字字符（按 5.2.1 定义，即 '0'..'9'）。
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ */
+
+#include <wctype.h>
+#include <wchar.h>
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型与返回类型：iswdigit 接受 wint_t，返回 int */
+static int (*fp_iswdigit)(wint_t) = iswdigit;   /* 函数指针类型匹配，验证原型 */
+
+int main(void)
+{
+    /* [1] 头文件 <wctype.h> 提供声明；调用形式正确 */
+    {
+        wint_t wc = L'5';
+        int r = iswdigit(wc);
+        assert(r != 0);                 /* 十进制数字 -> 非零 */
+    }
+
+    /* [2] 所有十进制数字字符 '0'..'9' 都应被识别 */
+    {
+        wchar_t digits[] = L"0123456789";
+        for (size_t i = 0; i < 10; ++i) {
+            assert(iswdigit((wint_t)digits[i]) != 0);
+        }
+    }
+
+    /* [2] 非十进制数字字符应返回 0 */
+    {
+        assert(iswdigit(L'a') == 0);
+        assert(iswdigit(L'z') == 0);
+        assert(iswdigit(L'A') == 0);
+        assert(iswdigit(L'Z') == 0);
+        assert(iswdigit(L' ') == 0);
+        assert(iswdigit(L'\t') == 0);
+        assert(iswdigit(L'\n') == 0);
+        assert(iswdigit(L'+') == 0);
+        assert(iswdigit(L'-') == 0);
+        assert(iswdigit(L'.') == 0);
+        assert(iswdigit(L',') == 0);
+        assert(iswdigit(L'_') == 0);
+        assert(iswdigit(L'@') == 0);
+        assert(iswdigit(L'#') == 0);
+        assert(iswdigit(L'0' - 1) == 0);   /* '/' 不是数字 */
+        assert(iswdigit(L'9' + 1) == 0);   /* ':' 不是数字 */
+    }
+
+    /* [2] 与窄字符版本 isdigit 在 ASCII 数字上的一致性 */
+    {
+        for (int c = 0; c < 128; ++c) {
+            int narrow = isdigit(c);
+            int wide   = iswdigit((wint_t)c);
+            /* 对基本字符集，两者对数字的判断应一致 */
+            assert((narrow != 0) == (wide != 0));
+        }
+    }
+
+    /* [2] 返回值语义：非零表示是数字，0 表示不是（不要求具体非零值） */
+    {
+        int r1 = iswdigit(L'7');
+        int r2 = iswdigit(L'x');
+        assert(r1 != 0);
+        assert(r2 == 0);
+    }
+
+    /* [1] 通过函数指针调用，验证原型可用 */
+    {
+        assert(fp_iswdigit(L'3') != 0);
+        assert(fp_iswdigit(L'q') == 0);
+    }
+
+    /* [2] 边界：WEOF 不是十进制数字 */
+    {
+        assert(iswdigit(WEOF) == 0);
+    }
+
+    printf("iswdigit: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「iswdigit 的参数类型为 wint_t」：
+ * 传入结构体类型，gcc -std=c99 应报错（参数类型不兼容）。 */
+struct S { int x; } s;
+iswdigit(s);
+
+/* 违反约束「iswdigit 返回 int，不能作为左值被赋值」：
+ * 函数调用结果不是左值，赋值应编译报错。 */
+iswdigit(L'1') = 0;
+
+/* 违反约束「iswdigit 需要 <wctype.h> 中的原型」：
+ * 若未包含头文件而隐式声明，则与原型冲突（在 C99 中隐式声明本身即约束违反）。
+ * 这里演示取地址赋给不兼容的函数指针类型，应报错。 */
+int (*bad_fp)(double) = iswdigit;
+
+/* 违反约束「参数个数必须匹配」：
+ * 少传参数，应编译报错。 */
+iswdigit();
+
+/* 违反约束「参数个数必须匹配」：
+ * 多传参数，应编译报错。 */
+iswdigit(L'1', L'2');
+
+#endif

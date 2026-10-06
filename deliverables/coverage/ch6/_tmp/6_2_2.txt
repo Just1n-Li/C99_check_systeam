@@ -1,0 +1,99 @@
+ARTICLE: 6.2.2
+
+TEXT:
+Linkages of identifiers
+[1] An identifier declared in different scopes or in the same scope more than once can be made to refer to the same object or function by a process called linkage. There are three kinds of linkage: external, internal, and none.
+[2] In the set of translation units and libraries that constitutes an entire program, each declaration of a particular identifier with external linkage denotes the same object or function. Within one translation unit, each declaration of an identifier with internal linkage denotes the same object or function. Each declaration of an identifier with no linkage denotes a unique entity.
+[3] If the declaration of a file scope identifier for an object or a function contains the storage- class specifier static, the identifier has internal linkage.
+[4] For an identifier declared with the storage-class specifier extern in a scope in which a prior declaration of that identifier is visible, if the prior declaration specifies internal or external linkage, the linkage of the identifier at the later declaration is the same as the linkage specified at the prior declaration. If no prior declaration is visible, or if the prior declaration specifies no linkage, then the identifier has external linkage.
+[5] If the declaration of an identifier for a function has no storage-class specifier, its linkage is determined exactly as if it were declared with the storage-class specifier extern. If the declaration of an identifier for an object has file scope and no storage-class specifier, its linkage is external.
+[6] The following identifiers have no linkage: an identifier declared to be anything other than an object or a function; an identifier declared to be a function parameter; a block scope identifier for an object declared without the storage-class specifier extern.
+[7] If, within a translation unit, the same identifier appears with both internal and external linkage, the behavior is undefined.
+Forward references: declarations (6.7), expressions (6.5), external definitions (6.9), statements (6.8).
+Footnotes:
+21) There is no linkage between different identifiers.
+22) A function declaration can contain the storage-class specifier static only if it is at file scope; see 6.7.1.
+23) As specified in 6.2.1, the later declaration might hide the prior declaration.
+
+CODE:
+/*
+ * 验证 C99 条款 6.2.2 Linkages of identifiers
+ * 预期行为：正向测试运行通过，负向测试编译报错（本条款无显式约束，故无负向测试）。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [3] 文件作用域 static -> internal linkage */
+static int s_int = 1;
+
+/* [5] 文件作用域对象无存储类说明符 -> external linkage */
+int g_int = 2;
+
+/* [4] extern 在先前声明可见时，继承先前链接性 */
+extern int s_int; /* 继承 internal linkage */
+extern int g_int; /* 继承 external linkage */
+
+/* [5] 函数无存储类说明符 -> external linkage */
+int func_no_sc(void);
+
+/* [2] external linkage: 整个程序中同一标识符指同一对象/函数 */
+/* [2] internal linkage: 同一翻译单元内指同一对象/函数 */
+
+int block_ext; /* 用于测试块作用域 extern */
+
+void test_linkage(int param) { /* [6] 函数参数无链接 */
+    /* [6] 块作用域对象无 extern -> 无链接 */
+    int local = 10;
+    /* [6] 非对象/函数标识符 -> 无链接 */
+    typedef int MyInt;
+    MyInt mi = 20;
+
+    /* [2] 验证 external linkage 指向同一对象 */
+    g_int = 50;
+    assert(g_int == 50);
+
+    /* [2] 验证 internal linkage 指向同一对象 */
+    s_int = 60;
+    assert(s_int == 60);
+
+    /* [4] 块作用域 extern 无先前可见声明 -> external linkage */
+    extern int block_ext;
+    block_ext = 70;
+    assert(block_ext == 70);
+
+    /* [4] 块作用域 extern 有先前可见声明(internal) -> internal linkage */
+    extern int s_int;
+    s_int = 80;
+    assert(s_int == 80);
+
+    /* [5] 验证函数 external linkage */
+    assert(func_no_sc() == 100);
+
+    /* [1] 验证三种链接性存在 */
+    /* external: g_int, func_no_sc */
+    /* internal: s_int */
+    /* none: local, param, mi */
+}
+
+int func_no_sc(void) {
+    return 100;
+}
+
+/* [7] 如果同一标识符同时具有 internal 和 external linkage，行为是未定义的。
+   由于是未定义行为(UB)而非约束，此处不进行测试。 */
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+/* 本条款 6.2.2 仅包含 Semantics 段落，无 Constraints 段落。
+   段落 [7] 描述的是未定义行为(UB)，而非约束。
+   根据规则，UB 不作为负向测试，故此处无负向测试代码。 */
+#endif
+
+int main(void) {
+    test_linkage(0);
+    printf("6.2.2 test passed.\n");
+    return 0;
+}

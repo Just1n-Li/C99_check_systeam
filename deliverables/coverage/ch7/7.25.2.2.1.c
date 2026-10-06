@@ -1,0 +1,165 @@
+/*
+ * 测试 C99 7.25.2.2.1 —— iswctype 函数
+ *
+ * 预期行为：
+ *   正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应被编译器拒绝（编译报错），
+ *             这些片段统一放在 #if 0 ... #endif 中，不影响本文件编译。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明 int iswctype(wint_t, wctype_t); 需 <wctype.h>
+ *   [2] 判定 wc 是否具有 desc 描述的属性；LC_CTYPE 需与 wctype 调用时一致
+ *   [3] 12 个表达式与对应分类函数真值等价
+ *   [4] 返回非零当且仅当 wc 具有该属性
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须匹配 int (*)(wint_t, wctype_t) */
+static int (*fp_iswctype)(wint_t, wctype_t) = iswctype;
+
+/* [2] 辅助：验证 iswctype(wc, wctype(name)) 与分类函数真值等价 */
+static void check_equiv(const char *name, wint_t wc)
+{
+    wctype_t desc = wctype(name);
+    int via_iswctype = iswctype(wc, desc);
+    int via_classify = 0;
+
+    /* [3] 按名字选择对应的分类函数 */
+    if (name[0] == 'a' && name[1] == 'l')      via_classify = iswalnum(wc);
+    else if (name[0] == 'a' && name[1] == 'l' && name[2] == 'p') via_classify = iswalpha(wc);
+    else if (name[0] == 'b')                   via_classify = iswblank(wc);
+    else if (name[0] == 'c')                   via_classify = iswcntrl(wc);
+    else if (name[0] == 'd')                   via_classify = iswdigit(wc);
+    else if (name[0] == 'g')                   via_classify = iswgraph(wc);
+    else if (name[0] == 'l')                   via_classify = iswlower(wc);
+    else if (name[0] == 'p' && name[1] == 'r') via_classify = iswprint(wc);
+    else if (name[0] == 'p' && name[1] == 'u') via_classify = iswpunct(wc);
+    else if (name[0] == 's')                   via_classify = iswspace(wc);
+    else if (name[0] == 'u')                   via_classify = iswupper(wc);
+    else if (name[0] == 'x')                   via_classify = iswxdigit(wc);
+
+    /* [3][4] 真值等价：两者同为 0 或同为非 0 */
+    assert((via_iswctype != 0) == (via_classify != 0));
+}
+
+int main(void)
+{
+    /* 使用 C locale，保证行为可预测 */
+    setlocale(LC_CTYPE, "C");
+
+    /* [1] 通过函数指针调用，验证原型 */
+    {
+        wctype_t d = wctype("digit");
+        assert(fp_iswctype(L'5', d) != 0);
+        assert(fp_iswctype(L'a', d) == 0);
+    }
+
+    /* [2] 基本语义：desc 由 wctype 返回，判定 wc 是否具有该属性 */
+    {
+        wctype_t d_digit = wctype("digit");
+        wctype_t d_alpha = wctype("alpha");
+        assert(iswctype(L'7', d_digit) != 0);   /* '7' 是数字 */
+        assert(iswctype(L'7', d_alpha) == 0);   /* '7' 不是字母 */
+        assert(iswctype(L'Z', d_alpha) != 0);   /* 'Z' 是字母 */
+        assert(iswctype(L'Z', d_digit) == 0);   /* 'Z' 不是数字 */
+    }
+
+    /* [3] 12 个表达式与对应分类函数真值等价，逐字符验证 */
+    {
+        const wint_t samples[] = {
+            L'a', L'Z', L'0', L'9', L' ', L'\t', L'\n',
+            L'!', L'@', L'.', L'\x01', L'\x7f', L'A', L'z'
+        };
+        const char *names[] = {
+            "alnum", "alpha", "blank", "cntrl", "digit", "graph",
+            "lower", "print", "punct", "space", "upper", "xdigit"
+        };
+        size_t i, j;
+        for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+            for (j = 0; j < sizeof(samples) / sizeof(samples[0]); ++j) {
+                check_equiv(names[i], samples[j]);
+            }
+        }
+    }
+
+    /* [4] 返回值语义：非零当且仅当具有该属性 */
+    {
+        wctype_t d_space = wctype("space");
+        wctype_t d_upper = wctype("upper");
+
+        /* 具有属性 -> 非零 */
+        assert(iswctype(L' ', d_space) != 0);
+        assert(iswctype(L'\t', d_space) != 0);
+        assert(iswctype(L'A', d_upper) != 0);
+
+        /* 不具有属性 -> 零 */
+        assert(iswctype(L'A', d_space) == 0);
+        assert(iswctype(L' ', d_upper) == 0);
+        assert(iswctype(L'1', d_upper) == 0);
+    }
+
+    /* [3] 边界：wctype 对未知名字返回 0，iswctype 对 desc==0 应返回 0 */
+    {
+        wctype_t d_bad = wctype("no_such_class_xyz");
+        assert(d_bad == 0);
+        assert(iswctype(L'a', d_bad) == 0);
+    }
+
+    printf("C99 7.25.2.2.1 iswctype: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「iswctype 的第一个实参类型为 wint_t」：
+ * 传入指针类型，gcc -std=c99 应报 incompatible type 错误。 */
+void bad_arg1(void)
+{
+    const char *p = "x";
+    iswctype(p, wctype("alpha"));   /* 期望：实参类型不兼容 */
+}
+
+/* 违反约束「iswctype 的第二个实参类型为 wctype_t」：
+ * 传入字符串字面量（char*），gcc -std=c99 应报 incompatible type 错误。 */
+void bad_arg2(void)
+{
+    iswctype(L'a', "alpha");        /* 期望：实参类型不兼容 */
+}
+
+/* 违反约束「iswctype 需要两个实参」：
+ * 实参个数不足，gcc -std=c99 应报 too few arguments 错误。 */
+void bad_argc(void)
+{
+    iswctype(L'a');                 /* 期望：实参过少 */
+}
+
+/* 违反约束「iswctype 返回 int，不能作为函数被再次调用」：
+ * 对返回值加调用运算符，gcc -std=c99 应报 called object is not a function 错误。 */
+void bad_call_result(void)
+{
+    iswctype(L'a', wctype("alpha"))(L'b', wctype("digit")); /* 期望：非函数被调用 */
+}
+
+/* 违反约束「iswctype 的返回值不是左值，不能赋值」：
+ * 对函数调用结果赋值，gcc -std=c99 应报 lvalue required 错误。 */
+void bad_assign_result(void)
+{
+    iswctype(L'a', wctype("alpha")) = 1;  /* 期望：需要左值 */
+}
+
+/* 违反约束「iswctype 的返回值不是左值，不能取地址」：
+ * 对函数调用结果取地址，gcc -std=c99 应报 lvalue required 错误。 */
+void bad_addr_result(void)
+{
+    int *p = &iswctype(L'a', wctype("alpha")); /* 期望：需要左值 */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

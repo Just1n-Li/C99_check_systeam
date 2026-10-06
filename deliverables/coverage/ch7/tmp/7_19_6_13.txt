@@ -1,0 +1,180 @@
+=== TEXT ===
+The vsprintf function
+Synopsis:
+[1] #include <stdarg.h> #include <stdio.h> int vsprintf(char * restrict s, const char * restrict format, va_list arg);
+Description:
+[2] The vsprintf function is equivalent to sprintf, with the variable argument list replaced by arg, which shall have been initialized by the va_start macro (and possibly subsequent va_arg calls). The vsprintf function does not invoke the va_end macro. If copying takes place between objects that overlap, the behavior is undefined.
+Returns:
+[3] The vsprintf function returns the number of characters written in the array, not counting the terminating null character, or a negative value if an encoding error occurred.
+=== CODE ===
+/*
+ * 测试 C99 7.19.6.13 —— vsprintf 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int vsprintf(char * restrict s, const char * restrict format, va_list arg);
+ *   [2] 语义：等价于 sprintf，可变实参列表由 arg 取代；arg 须由 va_start 初始化
+ *       （可能经过若干 va_arg 调用）；vsprintf 不调用 va_end；
+ *       若复制发生在重叠对象之间，行为未定义（UB，不作为负向测试）。
+ *   [3] 返回值：写入数组的字符数（不含结尾空字符），编码错误时返回负值。
+ */
+
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <assert.h>
+
+/* 辅助函数：用 vsprintf 实现一个可变参数格式化函数 */
+static int my_vsprintf(char *restrict buf, const char *restrict fmt, ...)
+{
+    va_list ap;
+    int n;
+    va_start(ap, fmt);          /* [2] arg 须由 va_start 初始化 */
+    n = vsprintf(buf, fmt, ap); /* [1] 调用 vsprintf */
+    va_end(ap);                 /* [2] vsprintf 本身不调用 va_end，由调用者负责 */
+    return n;
+}
+
+/* 辅助函数：先消费一个 int 实参，再用剩余实参调用 vsprintf，
+ * 验证「可能经过若干 va_arg 调用」后 arg 仍可用于 vsprintf */
+static int consume_then_vsprintf(char *restrict buf, const char *restrict fmt, ...)
+{
+    va_list ap;
+    int first;
+    int n;
+    va_start(ap, fmt);
+    first = va_arg(ap, int);    /* [2] 先做一次 va_arg */
+    n = vsprintf(buf, fmt, ap); /* [2] 之后 arg 仍可传给 vsprintf */
+    va_end(ap);
+    (void)first;
+    return n;
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+    {
+        char buf[128];
+        int n;
+
+        /* [1][2][3] 基本用法：格式化字符串，返回写入字符数（不含 '\0'） */
+        n = my_vsprintf(buf, "hello %s, %d!", "world", 42);
+        assert(n == (int)strlen("hello world, 42!"));
+        assert(strcmp(buf, "hello world, 42!") == 0);
+
+        /* [3] 返回值等于写入数组的字符数，不含结尾空字符 */
+        n = my_vsprintf(buf, "%d", 12345);
+        assert(n == 5);
+        assert(strcmp(buf, "12345") == 0);
+        assert(buf[5] == '\0');   /* 结尾空字符存在但不计入返回值 */
+
+        /* [3] 空格式串：写入 0 个字符，返回 0 */
+        n = my_vsprintf(buf, "");
+        assert(n == 0);
+        assert(buf[0] == '\0');
+
+        /* [2] 等价于 sprintf：与 sprintf 结果逐字节比较 */
+        {
+            char a[128], b[128];
+            int na, nb;
+            na = my_vsprintf(a, "x=%d y=%s z=%c", -7, "abc", 'Q');
+            nb = sprintf(b, "x=%d y=%s z=%c", -7, "abc", 'Q');
+            assert(na == nb);
+            assert(strcmp(a, b) == 0);
+        }
+
+        /* [2] arg 经过若干 va_arg 调用后仍可传给 vsprintf */
+        n = consume_then_vsprintf(buf, "rest=%d,%d", 111, 222, 333);
+        assert(n == (int)strlen("rest=222,333"));
+        assert(strcmp(buf, "rest=222,333") == 0);
+
+        /* [2] 多个可变实参、多种转换说明 */
+        n = my_vsprintf(buf, "%s|%d|%u|%x|%c|%f",
+                        "s", -1, 4000000000u, 255, 'A', 1.5);
+        assert(strcmp(buf, "s|-1|4000000000|ff|A|1.500000") == 0);
+        assert(n == (int)strlen(buf));
+
+        /* [2] 宽度/精度等格式控制与 sprintf 一致 */
+        n = my_vsprintf(buf, "[%5d][%-5d][%.3s]", 42, 42, "abcdef");
+        assert(strcmp(buf, "[   42][42   ][abc]") == 0);
+        assert(n == (int)strlen(buf));
+
+        /* [2] vsprintf 不调用 va_end：调用者可在 vsprintf 之后继续使用 arg
+         *     （这里通过再次 va_arg 验证 arg 未被 vsprintf 破坏/结束） */
+        {
+            va_list ap;
+            char b2[64];
+            int r;
+            va_start(ap, 0);
+            /* 手动构造：先取一个 int，再交给 vsprintf，再取一个 int */
+            {
+                /* 用另一个辅助函数不方便，这里直接内联 */
+                int x = va_arg(ap, int);
+                r = vsprintf(b2, "%d", x);
+                assert(r == (int)strlen(b2));
+                {
+                    int y = va_arg(ap, int);   /* vsprintf 未调用 va_end，arg 仍有效 */
+                    assert(y == 999);
+                }
+            }
+            va_end(ap);
+        }
+
+        printf("正向测试全部通过。\n");
+    }
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /*
+     * 违反约束 [1]：vsprintf 的第一个参数类型为 char * restrict，
+     * 传入 const char * 会丢弃 const 限定，gcc -std=c99 应报错
+     * （error: passing argument 1 ... discards 'const' qualifier）。
+     */
+    {
+        const char *s = "abc";
+        va_list ap;
+        vsprintf(s, "%d", ap);   /* 应编译报错：丢弃 const 限定 */
+    }
+
+    /*
+     * 违反约束 [1]：第二个参数类型为 const char * restrict，
+     * 传入非指针（如 int）类型不匹配，应编译报错。
+     */
+    {
+        char buf[16];
+        va_list ap;
+        vsprintf(buf, 123, ap);  /* 应编译报错：参数类型不兼容 */
+    }
+
+    /*
+     * 违反约束 [1]：第三个参数类型为 va_list，
+     * 传入 int 类型不匹配，应编译报错。
+     */
+    {
+        char buf[16];
+        vsprintf(buf, "%d", 5);  /* 应编译报错：第三个参数应为 va_list */
+    }
+
+    /*
+     * 违反约束 [1]：参数个数不足（缺少 va_list 实参），
+     * 应编译报错（too few arguments to function 'vsprintf'）。
+     */
+    {
+        char buf[16];
+        vsprintf(buf, "%d");     /* 应编译报错：实参个数不足 */
+    }
+
+    /*
+     * 违反约束 [1]：vsprintf 返回 int，不能作为函数指针被调用，
+     * 也不能对函数名赋值，应编译报错。
+     */
+    {
+        vsprintf = 0;            /* 应编译报错：函数名不是可修改左值 */
+    }
+#endif
+
+    return 0;
+}

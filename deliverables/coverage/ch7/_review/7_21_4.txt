@@ -1,0 +1,217 @@
+=== ARTICLE 7.21.4 ===
+--- TEXT ---
+Comparison functions
+[1] The sign of a nonzero value returned by the comparison functions memcmp, strcmp, and strncmp is determined by the sign of the difference between the values of the first pair of characters (both interpreted as unsigned char) that differ in the objects being compared.
+--- CODE ---
+/*
+ * 测试 C99 7.21.4 [1]：比较函数 memcmp / strcmp / strncmp 的返回值符号
+ * 由「第一对不同的字符（均按 unsigned char 解释）之差」的符号决定。
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中）。
+ *
+ * 说明：本条款只规定返回值的「符号」，不规定具体数值，因此测试只检查
+ *       < 0、== 0、> 0 三种符号关系，不检查具体返回值大小。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* 辅助：把比较结果归一化为符号 -1 / 0 / +1 */
+static int sgn(int v)
+{
+    return (v > 0) - (v < 0);
+}
+
+int main(void)
+{
+    /* ---------------------------------------------------------------
+     * [1] memcmp：符号由第一对不同字符（按 unsigned char 解释）之差决定
+     * --------------------------------------------------------------- */
+
+    /* [1] 完全相同 -> 返回 0 */
+    {
+        unsigned char a[] = { 0x00, 0x01, 0x02, 0x03 };
+        unsigned char b[] = { 0x00, 0x01, 0x02, 0x03 };
+        assert(memcmp(a, b, sizeof a) == 0);
+    }
+
+    /* [1] 第一对不同字符：a 的 0x01 < b 的 0x02 -> 负 */
+    {
+        unsigned char a[] = { 0x00, 0x01, 0x02 };
+        unsigned char b[] = { 0x00, 0x02, 0x02 };
+        assert(sgn(memcmp(a, b, sizeof a)) < 0);
+        assert(sgn(memcmp(b, a, sizeof a)) > 0);
+    }
+
+    /* [1] 关键点：按 unsigned char 解释，而非 signed char。
+     *     0xFF 作为 unsigned char 是 255，大于 0x01 的 1。
+     *     若错误地按 signed char 比较，0xFF 会被当作 -1，结果符号相反。 */
+    {
+        unsigned char a[] = { 0xFF };
+        unsigned char b[] = { 0x01 };
+        /* 255 - 1 = 254 > 0，故 a > b */
+        assert(sgn(memcmp(a, b, 1)) > 0);
+        assert(sgn(memcmp(b, a, 1)) < 0);
+    }
+
+    /* [1] 0x80 (128) 与 0x7F (127)：unsigned 解释下 128 > 127 */
+    {
+        unsigned char a[] = { 0x80 };
+        unsigned char b[] = { 0x7F };
+        assert(sgn(memcmp(a, b, 1)) > 0);
+        assert(sgn(memcmp(b, a, 1)) < 0);
+    }
+
+    /* [1] 只有「第一对」不同字符决定符号：后续字符的差异不影响符号 */
+    {
+        unsigned char a[] = { 0x01, 0xFF, 0xFF };
+        unsigned char b[] = { 0x02, 0x00, 0x00 };
+        /* 第一对不同：0x01 < 0x02 -> 负，尽管后面 a 更大 */
+        assert(sgn(memcmp(a, b, sizeof a)) < 0);
+    }
+
+    /* [1] n == 0 时无字符比较 -> 返回 0 */
+    {
+        unsigned char a[] = { 0x01 };
+        unsigned char b[] = { 0x02 };
+        assert(memcmp(a, b, 0) == 0);
+    }
+
+    /* ---------------------------------------------------------------
+     * [1] strcmp：符号由第一对不同字符（按 unsigned char 解释）之差决定
+     * --------------------------------------------------------------- */
+
+    /* [1] 相同字符串 -> 0 */
+    assert(strcmp("hello", "hello") == 0);
+    assert(strcmp("", "") == 0);
+
+    /* [1] 第一对不同字符决定符号 */
+    assert(sgn(strcmp("abc", "abd")) < 0);
+    assert(sgn(strcmp("abd", "abc")) > 0);
+
+    /* [1] 前缀关系：短串在 '\0' 处与长串字符比较，'\0' 更小 -> 负 */
+    assert(sgn(strcmp("abc", "abcd")) < 0);
+    assert(sgn(strcmp("abcd", "abc")) > 0);
+
+    /* [1] 按 unsigned char 解释：'\xFF' (255) > 'a' (97) */
+    {
+        char a[] = { (char)0xFF, '\0' };
+        char b[] = { 'a', '\0' };
+        assert(sgn(strcmp(a, b)) > 0);
+        assert(sgn(strcmp(b, a)) < 0);
+    }
+
+    /* [1] 按 unsigned char 解释：'\x80' (128) > '\x7F' (127) */
+    {
+        char a[] = { (char)0x80, '\0' };
+        char b[] = { (char)0x7F, '\0' };
+        assert(sgn(strcmp(a, b)) > 0);
+        assert(sgn(strcmp(b, a)) < 0);
+    }
+
+    /* [1] 只有第一对不同字符决定符号 */
+    assert(sgn(strcmp("aZZZ", "bAAA")) < 0);
+
+    /* ---------------------------------------------------------------
+     * [1] strncmp：符号由第一对不同字符（按 unsigned char 解释）之差决定
+     * --------------------------------------------------------------- */
+
+    /* [1] 前 n 个字符相同 -> 0 */
+    assert(strncmp("hello", "help!", 3) == 0);
+    assert(strncmp("abc", "abd", 2) == 0);
+
+    /* [1] 第一对不同字符决定符号 */
+    assert(sgn(strncmp("abc", "abd", 3)) < 0);
+    assert(sgn(strncmp("abd", "abc", 3)) > 0);
+
+    /* [1] n 限制比较长度：差异在 n 之外则返回 0 */
+    assert(strncmp("abcX", "abcY", 3) == 0);
+
+    /* [1] 前缀关系：在 n 范围内遇到 '\0'，'\0' 更小 -> 负 */
+    assert(sgn(strncmp("abc", "abcd", 4)) < 0);
+    assert(sgn(strncmp("abcd", "abc", 4)) > 0);
+
+    /* [1] 按 unsigned char 解释 */
+    {
+        char a[] = { (char)0xFF, '\0' };
+        char b[] = { 'a', '\0' };
+        assert(sgn(strncmp(a, b, 1)) > 0);
+        assert(sgn(strncmp(b, a, 1)) < 0);
+    }
+
+    /* [1] n == 0 -> 0 */
+    assert(strncmp("abc", "xyz", 0) == 0);
+
+    /* [1] 只有第一对不同字符决定符号 */
+    assert(sgn(strncmp("aZZZ", "bAAA", 4)) < 0);
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+
+#if 0
+
+/*
+ * 说明：7.21.4 是「比较函数」的语义条款，本身不直接给出约束（constraint）
+ * 段落。以下负向片段针对这些函数在 <string.h> 中的声明所隐含的约束：
+ * 实参类型必须与原型匹配（C99 6.5.2.2 约束：实参类型须可赋值给对应形参）。
+ * 违反后编译器必须给出诊断（编译报错）。
+ */
+
+/* 违反约束「memcmp 第 3 个形参为 size_t，实参须为整型」：
+ * 传入结构体类型实参，gcc -std=c99 应报错（类型不兼容）。 */
+struct S { int x; };
+void bad_memcmp_size(void)
+{
+    unsigned char a[4] = {0}, b[4] = {0};
+    struct S s;
+    memcmp(a, b, s);   /* 错误：size_t 形参收到 struct S 实参 */
+}
+
+/* 违反约束「memcmp 第 1、2 个形参为 const void *，实参须为对象指针」：
+ * 传入 double 实参，gcc -std=c99 应报错（不能把 double 转成指针）。 */
+void bad_memcmp_ptr(void)
+{
+    double d = 0.0;
+    memcmp(d, d, 1);   /* 错误：void* 形参收到 double 实参 */
+}
+
+/* 违反约束「strcmp 形参为 const char *，实参须为字符指针」：
+ * 传入 int 实参，gcc -std=c99 应报错。 */
+void bad_strcmp_arg(void)
+{
+    int n = 0;
+    strcmp(n, n);      /* 错误：const char* 形参收到 int 实参 */
+}
+
+/* 违反约束「strncmp 第 3 个形参为 size_t，实参须为整型」：
+ * 传入指针实参，gcc -std=c99 应报错。 */
+void bad_strncmp_size(void)
+{
+    char *p = "x";
+    strncmp("a", "b", p);  /* 错误：size_t 形参收到 char* 实参 */
+}
+
+/* 违反约束「函数调用实参个数须与原型一致」：
+ * strcmp 需要 2 个实参，只给 1 个，gcc -std=c99 应报错。 */
+void bad_strcmp_arity(void)
+{
+    strcmp("a");       /* 错误：实参个数不足 */
+}
+
+/* 违反约束「函数调用实参个数须与原型一致」：
+ * memcmp 需要 3 个实参，给 2 个，gcc -std=c99 应报错。 */
+void bad_memcmp_arity(void)
+{
+    unsigned char a[1] = {0}, b[1] = {0};
+    memcmp(a, b);      /* 错误：实参个数不足 */
+}
+
+#endif /* 负向测试结束 */

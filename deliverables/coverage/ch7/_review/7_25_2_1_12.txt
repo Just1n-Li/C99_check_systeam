@@ -1,0 +1,156 @@
+=== TEXT ===
+The iswxdigit function
+Synopsis:
+[1] #include <wctype.h> int iswxdigit(wint_t wc);
+Description:
+[2] The iswxdigit function tests for any wide character that corresponds to a hexadecimal-digit character (as defined in 6.4.4.1).
+
+=== CODE ===
+/*
+ * 测试 C99 7.25.2.1.12 —— iswxdigit 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中）。
+ *
+ * 条款要点：
+ *   [1] 原型： #include <wctype.h>  int iswxdigit(wint_t wc);
+ *   [2] 测试宽字符是否对应十六进制数字字符（6.4.4.1 定义：0-9 a-f A-F）。
+ */
+
+#include <wctype.h>
+#include <stdio.h>
+#include <assert.h>
+#include <wchar.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性检查：函数可被调用，返回 int，参数为 wint_t */
+static int proto_check(wint_t wc)
+{
+    int r = iswxdigit(wc);   /* [1] 调用原型声明的函数 */
+    return r;
+}
+
+int main(void)
+{
+    /* [2] 十六进制数字字符：'0'..'9' 应返回非零 */
+    assert(iswxdigit(L'0') != 0);
+    assert(iswxdigit(L'1') != 0);
+    assert(iswxdigit(L'2') != 0);
+    assert(iswxdigit(L'3') != 0);
+    assert(iswxdigit(L'4') != 0);
+    assert(iswxdigit(L'5') != 0);
+    assert(iswxdigit(L'6') != 0);
+    assert(iswxdigit(L'7') != 0);
+    assert(iswxdigit(L'8') != 0);
+    assert(iswxdigit(L'9') != 0);
+
+    /* [2] 十六进制数字字符：'a'..'f' 应返回非零 */
+    assert(iswxdigit(L'a') != 0);
+    assert(iswxdigit(L'b') != 0);
+    assert(iswxdigit(L'c') != 0);
+    assert(iswxdigit(L'd') != 0);
+    assert(iswxdigit(L'e') != 0);
+    assert(iswxdigit(L'f') != 0);
+
+    /* [2] 十六进制数字字符：'A'..'F' 应返回非零 */
+    assert(iswxdigit(L'A') != 0);
+    assert(iswxdigit(L'B') != 0);
+    assert(iswxdigit(L'C') != 0);
+    assert(iswxdigit(L'D') != 0);
+    assert(iswxdigit(L'E') != 0);
+    assert(iswxdigit(L'F') != 0);
+
+    /* [2] 非十六进制数字字符应返回 0 */
+    assert(iswxdigit(L'g') == 0);
+    assert(iswxdigit(L'G') == 0);
+    assert(iswxdigit(L'z') == 0);
+    assert(iswxdigit(L'Z') == 0);
+    assert(iswxdigit(L' ') == 0);
+    assert(iswxdigit(L'\t') == 0);
+    assert(iswxdigit(L'\n') == 0);
+    assert(iswxdigit(L'.') == 0);
+    assert(iswxdigit(L',') == 0);
+    assert(iswxdigit(L'+') == 0);
+    assert(iswxdigit(L'-') == 0);
+    assert(iswxdigit(L'@') == 0);
+    assert(iswxdigit(L'[') == 0);
+    assert(iswxdigit(L'`') == 0);
+    assert(iswxdigit(L'{') == 0);
+    assert(iswxdigit(L'~') == 0);
+
+    /* [2] 边界：WEOF 不是十六进制数字字符 */
+    assert(iswxdigit(WEOF) == 0);
+
+    /* [1] 通过函数指针调用，验证原型签名 */
+    {
+        int (*fp)(wint_t) = iswxdigit;
+        assert(fp(L'0') != 0);
+        assert(fp(L'F') != 0);
+        assert(fp(L'g') == 0);
+    }
+
+    /* [1] 通过辅助函数调用 */
+    assert(proto_check(L'a') != 0);
+    assert(proto_check(L'9') != 0);
+    assert(proto_check(L'x') == 0);
+
+    /* [2] 返回值语义：非零表示“是”，零表示“不是” */
+    {
+        int yes = iswxdigit(L'5');
+        int no  = iswxdigit(L'q');
+        assert(yes != 0);
+        assert(no == 0);
+    }
+
+    printf("C99 7.25.2.1.12 iswxdigit: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「iswxdigit 的参数类型为 wint_t」：
+ * 传入结构体类型，gcc -std=c99 应报错（类型不兼容）。 */
+struct S { int x; } s;
+iswxdigit(s);
+
+/* 违反约束「iswxdigit 的参数类型为 wint_t」：
+ * 传入指针类型，gcc -std=c99 应报错。 */
+int *p = 0;
+iswxdigit(p);
+
+/* 违反约束「iswxdigit 的参数类型为 wint_t」：
+ * 传入 double，gcc -std=c99 应报错（隐式转换不允许）。 */
+iswxdigit(1.5);
+
+/* 违反约束「iswxdigit 返回 int」：
+ * 试图把返回值当作结构体使用，gcc -std=c99 应报错。 */
+struct S t = iswxdigit(L'0');
+
+/* 违反约束「iswxdigit 返回 int」：
+ * 对返回值取成员，gcc -std=c99 应报错（int 无成员）。 */
+iswxdigit(L'0').x;
+
+/* 违反约束「iswxdigit 返回 int」：
+ * 对返回值赋值，gcc -std=c99 应报错（非左值）。 */
+iswxdigit(L'0') = 1;
+
+/* 违反约束「iswxdigit 返回 int」：
+ * 对返回值取地址，gcc -std=c99 应报错（非左值）。 */
+int *q = &iswxdigit(L'0');
+
+/* 违反约束「iswxdigit 的参数个数为 1」：
+ * 少传参数，gcc -std=c99 应报错。 */
+iswxdigit();
+
+/* 违反约束「iswxdigit 的参数个数为 1」：
+ * 多传参数，gcc -std=c99 应报错。 */
+iswxdigit(L'0', L'1');
+
+/* 违反约束「iswxdigit 的参数类型为 wint_t」：
+ * 传入字符串字面量（char*），gcc -std=c99 应报错。 */
+iswxdigit("0");
+
+#endif

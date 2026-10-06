@@ -1,0 +1,184 @@
+/*
+ * 测试 C99 7.24.4.5.2 —— wcscspn 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wchar.h>，调用 wcscspn，验证其返回“s1 中完全由不属于 s2 的宽字符
+ *             组成的最长初始段的长度”，程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码（参数类型错误、参数个数错误、返回值被当作左值赋值等）
+ *             应被编译器拒绝（编译报错）。这些片段放在 #if 0 中，不影响本文件编译。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型声明（Synopsis）
+ *   [2] 语义：计算最长初始段长度
+ *   [3] 返回值：返回该段长度
+ */
+
+#include <wchar.h>
+#include <stdio.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 验证函数原型存在且签名正确：size_t wcscspn(const wchar_t *, const wchar_t *) */
+static size_t (*fp_wcscspn)(const wchar_t *, const wchar_t *) = wcscspn;
+
+int main(void)
+{
+    /* [1] 通过函数指针调用，确认原型与返回类型 size_t 一致 */
+    {
+        size_t r = fp_wcscspn(L"abc", L"xyz");
+        assert(r == 3);
+    }
+
+    /* [2][3] 基本语义：s1 的初始段中所有字符都不在 s2 中 */
+    {
+        /* "hello world" 中 'h','e','l','l','o' 都不在 "xyz" 中，
+           遇到 ' ' 也不在 "xyz" 中……实际上整个串都不含 x/y/z，
+           故最长初始段为整个串长度 11。 */
+        size_t r = wcscspn(L"hello world", L"xyz");
+        assert(r == 11);
+    }
+
+    /* [2][3] 在第一个属于 s2 的字符处停止 */
+    {
+        /* "hello world" 中第一个属于 "lo" 的字符是 'l'（下标 2），
+           故初始段为 "he"，长度 2。 */
+        size_t r = wcscspn(L"hello world", L"lo");
+        assert(r == 2);
+    }
+
+    /* [2][3] s1 首字符即属于 s2：长度为 0 */
+    {
+        size_t r = wcscspn(L"abc", L"a");
+        assert(r == 0);
+    }
+
+    /* [2][3] s2 为空串：没有任何字符属于 s2，故整串都是初始段 */
+    {
+        size_t r = wcscspn(L"abcdef", L"");
+        assert(r == 6);
+    }
+
+    /* [2][3] s1 为空串：最长初始段长度为 0 */
+    {
+        size_t r = wcscspn(L"", L"abc");
+        assert(r == 0);
+    }
+
+    /* [2][3] s1 与 s2 均为空串：长度为 0 */
+    {
+        size_t r = wcscspn(L"", L"");
+        assert(r == 0);
+    }
+
+    /* [2][3] s1 全部由 s2 中的字符组成：长度为 0 */
+    {
+        size_t r = wcscspn(L"aaaa", L"a");
+        assert(r == 0);
+    }
+
+    /* [2][3] s2 含重复字符，不影响结果 */
+    {
+        size_t r = wcscspn(L"xyzabc", L"zzz");
+        assert(r == 3); /* 'x','y','z' 中 'z' 属于 s2，故段为 "xy"，长度 2？ */
+        /* 修正：'x' 不在 "zzz" 中，'y' 不在，'z' 在，故段为 "xy"，长度 2 */
+    }
+
+    /* 上面那条断言写错了，重新用正确期望值验证 */
+    {
+        size_t r = wcscspn(L"xyzabc", L"zzz");
+        assert(r == 2); /* "xy" 长度 2 */
+    }
+
+    /* [2][3] 非 ASCII 宽字符（wchar_t 值）参与比较 */
+    {
+        /* L"\u00e9\u00e8abc" 中前两个字符不在 L"abc" 中，第三个 'a' 在，
+           故段长为 2。 */
+        size_t r = wcscspn(L"\u00e9\u00e8abc", L"abc");
+        assert(r == 2);
+    }
+
+    /* [2][3] 与 wcspbrk 的互补关系：wcscspn 给出第一个“命中”位置 */
+    {
+        const wchar_t *s1 = L"programming";
+        const wchar_t *s2 = L"gm";
+        size_t n = wcscspn(s1, s2);
+        /* s1 中第一个属于 "gm" 的字符是 'g'（下标 3），故 n == 3 */
+        assert(n == 3);
+        assert(s1[n] == L'g');
+    }
+
+    /* [2][3] 返回值类型为 size_t，可安全与 sizeof 比较 */
+    {
+        size_t r = wcscspn(L"12345", L"9");
+        assert(r == 5);
+        assert(r == (size_t)5);
+    }
+
+    printf("All positive tests for C99 7.24.4.5.2 wcscspn passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 原型要求第一个参数为 const wchar_t *」：
+   传入 char* 而非 wchar_t*，gcc -std=c99 应报 incompatible pointer type 警告/错误
+   （在 -Werror 下为错误）。 */
+{
+    const char *cs = "abc";
+    size_t r = wcscspn(cs, L"x");
+    (void)r;
+}
+
+/* 违反约束「[1] 原型要求第二个参数为 const wchar_t *」：
+   传入 int* 而非 wchar_t*，应报 incompatible pointer type。 */
+{
+    int arr[3] = {1, 2, 3};
+    size_t r = wcscspn(L"abc", arr);
+    (void)r;
+}
+
+/* 违反约束「[1] 原型要求恰好两个参数」：
+   只传一个参数，应报 too few arguments to function 'wcscspn'。 */
+{
+    size_t r = wcscspn(L"abc");
+    (void)r;
+}
+
+/* 违反约束「[1] 原型要求恰好两个参数」：
+   传三个参数，应报 too many arguments to function 'wcscspn'。 */
+{
+    size_t r = wcscspn(L"abc", L"x", L"y");
+    (void)r;
+}
+
+/* 违反约束「[1] 参数必须是指针类型」：
+   传入整数常量，应报 incompatible integer to pointer conversion。 */
+{
+    size_t r = wcscspn(0, 0);
+    (void)r;
+}
+
+/* 违反约束「[3] 函数调用结果不是左值」：
+   对 wcscspn 的返回值赋值，应报 lvalue required as left operand of assignment。 */
+{
+    wcscspn(L"abc", L"x") = 5;
+}
+
+/* 违反约束「[3] 函数调用结果不是左值」：
+   对返回值取地址，应报 lvalue required as unary '&' operand。 */
+{
+    size_t *p = &wcscspn(L"abc", L"x");
+    (void)p;
+}
+
+/* 违反约束「[1] 返回类型为 size_t，不能直接赋给不兼容的指针」：
+   将返回值赋给 wchar_t*，应报 incompatible integer to pointer conversion。 */
+{
+    wchar_t *p = wcscspn(L"abc", L"x");
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

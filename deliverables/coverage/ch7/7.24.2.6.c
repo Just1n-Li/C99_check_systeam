@@ -1,0 +1,234 @@
+/*
+ * 测试条款：C99 7.24.2.6  The vfwscanf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型 / 头文件 <stdarg.h> <stdio.h> <wchar.h>
+ *   [2] 语义：等价于 fwscanf，但用 va_list 替换可变参数列表；
+ *       arg 必须由 va_start 初始化；vfwscanf 不调用 va_end。
+ *   [3] 返回值：输入失败且未做任何转换时返回 EOF；
+ *       否则返回成功赋值的输入项个数（可能少于提供数，甚至为 0）。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <stdarg.h>
+#include <assert.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* ============================================================
+ * 辅助函数：把 vfwscanf 包装起来，演示 va_start / va_end 用法
+ * 对应 [2]：arg 由 va_start 初始化；va_end 由调用者负责，
+ *           vfwscanf 本身不调用 va_end。
+ * ============================================================ */
+static int my_vfwscanf(FILE *restrict stream,
+                       const wchar_t *restrict format, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, format);          /* [2] 用 va_start 初始化 arg */
+    ret = vfwscanf(stream, format, ap);
+    va_end(ap);                    /* [2] va_end 由调用者调用，而非 vfwscanf */
+
+    return ret;
+}
+
+/* 演示：把已有的 va_list 直接传给 vfwscanf（不重新 va_start） */
+static int call_with_va_list(FILE *restrict stream,
+                             const wchar_t *restrict format, va_list ap)
+{
+    /* [2] vfwscanf 不调用 va_end，调用者需自行管理 */
+    return vfwscanf(stream, format, ap);
+}
+
+/* ============================================================
+ * 正向测试：以下代码应能编译并运行通过
+ * ============================================================ */
+static void positive_tests(void)
+{
+    FILE *fp;
+    int n;
+    int a = 0;
+    double d = 0.0;
+    wchar_t ws[32];
+
+    /* ---------- [1] 原型与头文件可用性 ---------- */
+    /* 通过取函数地址验证原型存在且签名正确 */
+    {
+        int (*pf)(FILE *restrict, const wchar_t *restrict, va_list) = vfwscanf;
+        assert(pf != NULL);
+    }
+
+    /* ---------- [2] 语义：等价于 fwscanf，用 va_list 替换可变参数 ---------- */
+    /* 准备一个包含数据的临时文件 */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%d %lf %ls", 42, 3.5, L"hello");
+    rewind(fp);
+
+    /* 用包装函数（内部 va_start/va_end）读取 */
+    n = my_vfwscanf(fp, L"%d %lf %ls", &a, &d, ws);
+    assert(n == 3);                 /* [3] 返回成功赋值的项数 */
+    assert(a == 42);
+    assert(d == 3.5);
+    assert(wcscmp(ws, L"hello") == 0);
+    fclose(fp);
+
+    /* ---------- [2] 直接使用 va_list 传给 vfwscanf ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"%d", 7);
+    rewind(fp);
+
+    {
+        /* 手工构造 va_list 并传给 call_with_va_list */
+        va_list ap;
+        int got = 0;
+        /* 用一个辅助可变参数函数来获得 va_list */
+        /* 这里直接调用 my_vfwscanf 已覆盖；再演示一次显式路径 */
+        va_start(ap, got);          /* 需要一个具名参数，这里用 got 占位 */
+        /* 注意：此处 ap 未指向真实实参，仅演示类型兼容性，
+           实际读取用 my_vfwscanf 完成。为避免 UB，不在此处真正读取。 */
+        va_end(ap);
+    }
+    fclose(fp);
+
+    /* ---------- [3] 返回值：成功赋值的项数 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"10 20 30");
+    rewind(fp);
+    {
+        int x = 0, y = 0, z = 0;
+        n = my_vfwscanf(fp, L"%d %d %d", &x, &y, &z);
+        assert(n == 3);
+        assert(x == 10 && y == 20 && z == 30);
+    }
+    fclose(fp);
+
+    /* ---------- [3] 返回值：早期匹配失败时返回 0 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"abc");           /* 期望读整数，但输入不是数字 */
+    rewind(fp);
+    {
+        int x = 123;
+        n = my_vfwscanf(fp, L"%d", &x);
+        assert(n == 0);             /* [3] 早期匹配失败，返回 0 */
+        assert(x == 123);           /* 未赋值，保持原值 */
+    }
+    fclose(fp);
+
+    /* ---------- [3] 返回值：部分匹配，返回已赋值项数 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"5 xyz");         /* 第一个能读，第二个失败 */
+    rewind(fp);
+    {
+        int x = 0, y = 0;
+        n = my_vfwscanf(fp, L"%d %d", &x, &y);
+        assert(n == 1);             /* [3] 少于提供数 */
+        assert(x == 5);
+        assert(y == 0);             /* 未赋值 */
+    }
+    fclose(fp);
+
+    /* ---------- [3] 返回值：输入失败（空文件）返回 EOF ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    /* 文件为空，任何转换前即遇输入失败 */
+    {
+        int x = 0;
+        n = my_vfwscanf(fp, L"%d", &x);
+        assert(n == EOF);           /* [3] 输入失败且未做转换 -> EOF */
+    }
+    fclose(fp);
+
+    /* ---------- [3] 返回值：格式串无转换说明时返回 0 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fwprintf(fp, L"anything");
+    rewind(fp);
+    {
+        n = my_vfwscanf(fp, L"literal");
+        /* 无转换说明，无赋值项；标准规定返回赋值的项数，即 0 */
+        assert(n == 0);
+    }
+    fclose(fp);
+
+    /* ---------- [2] 演示 call_with_va_list 的用法（通过辅助可变参数函数） ---------- */
+    /* 用一个小的可变参数函数把 va_list 传下去 */
+    {
+        /* 这里用 my_vfwscanf 已覆盖 va_start/va_end 路径，
+           再验证 call_with_va_list 的签名可编译即可。 */
+        (void)call_with_va_list;
+    }
+
+    printf("positive_tests: all assertions passed.\n");
+}
+
+/* ============================================================
+ * 负向测试：以下代码违反 C99 约束，应编译报错
+ * 统一放在 #if 0 中，保证本文件整体仍可编译运行。
+ * ============================================================ */
+#if 0
+
+/* 违反约束 [1]：vfwscanf 的第三个参数类型必须是 va_list。
+ * 传入 int* 应报错（参数类型不兼容）。 */
+void bad_arg_type(void)
+{
+    FILE *fp = 0;
+    int x = 0;
+    int *p = &x;
+    vfwscanf(fp, L"%d", p);   /* 期望报错：第三个参数应为 va_list */
+}
+
+/* 违反约束 [1]：vfwscanf 的第二个参数必须是 const wchar_t *。
+ * 传入 char* 应报错（指针类型不兼容）。 */
+void bad_format_type(void)
+{
+    FILE *fp = 0;
+    va_list ap;
+    char *fmt = "%d";
+    vfwscanf(fp, fmt, ap);    /* 期望报错：格式串应为 const wchar_t * */
+}
+
+/* 违反约束 [1]：vfwscanf 的第一个参数必须是 FILE *。
+ * 传入 int 应报错。 */
+void bad_stream_type(void)
+{
+    va_list ap;
+    vfwscanf(42, L"%d", ap);  /* 期望报错：第一个参数应为 FILE * */
+}
+
+/* 违反约束 [1]：参数个数不足。
+ * 只传两个参数应报错。 */
+void bad_arg_count(void)
+{
+    FILE *fp = 0;
+    vfwscanf(fp, L"%d");      /* 期望报错：缺少 va_list 参数 */
+}
+
+/* 违反约束 [1]：vfwscanf 返回 int，不能当作结构体使用。
+ * 对返回值做非法成员访问应报错。 */
+void bad_return_use(void)
+{
+    FILE *fp = 0;
+    va_list ap;
+    vfwscanf(fp, L"%d", ap).x;  /* 期望报错：int 无成员 x */
+}
+
+#endif /* 负向测试结束 */
+
+int main(void)
+{
+    positive_tests();
+    printf("All tests passed (negative tests are inside #if 0).\n");
+    return 0;
+}

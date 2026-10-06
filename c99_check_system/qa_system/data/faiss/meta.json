@@ -1,0 +1,62 @@
+[
+  {
+    "chunk_id": "dc73be1231e577b9f823-1",
+    "law_id": "dc73be1231e577b9f823",
+    "law_name": "学生项目示例条例",
+    "article": "第一条",
+    "text": "《学生项目示例条例》第一条：为了演示法律法规网页爬虫、文本清洗和知识库构建流程，制定本示例条例。",
+    "source": "",
+    "status": null,
+    "source_file": "detail_1.html"
+  },
+  {
+    "chunk_id": "dc73be1231e577b9f823-2",
+    "law_id": "dc73be1231e577b9f823",
+    "law_name": "学生项目示例条例",
+    "article": "第二条",
+    "text": "《学生项目示例条例》第二条：开展数据采集时，应当遵守网站服务条款、访问规则和适用法律，不得绕过登录、验证码或者其他访问限制。",
+    "source": "",
+    "status": null,
+    "source_file": "detail_1.html"
+  },
+  {
+    "chunk_id": "dc73be1231e577b9f823-3",
+    "law_id": "dc73be1231e577b9f823",
+    "law_name": "学生项目示例条例",
+    "article": "第三条",
+    "text": "《学生项目示例条例》第三条：数据文件应当保留法规名称、来源网址、采集时间和正文内容，便于后续核验。",
+    "source": "",
+    "status": null,
+    "source_file": "detail_1.html"
+  },
+  {
+    "chunk_id": "c222f288bc23185b00a9-1",
+    "law_id": "c222f288bc23185b00a9",
+    "law_name": "网络数据示例规定",
+    "article": "第一条",
+    "text": "《网络数据示例规定》第一条：数据处理应当保证来源可追溯、内容准确和格式统一。",
+    "source": "",
+    "status": null,
+    "source_file": "detail_2.html"
+  },
+  {
+    "chunk_id": "c222f288bc23185b00a9-2",
+    "law_id": "c222f288bc23185b00a9",
+    "law_name": "网络数据示例规定",
+    "article": "第二条之一",
+    "text": "《网络数据示例规定》第二条之一：对已经失效或者废止的文件，应当明确标注效力状态。",
+    "source": "",
+    "status": null,
+    "source_file": "detail_2.html"
+  },
+  {
+    "chunk_id": "c222f288bc23185b00a9-3",
+    "law_id": "c222f288bc23185b00a9",
+    "law_name": "网络数据示例规定",
+    "article": "第三条",
+    "text": "《网络数据示例规定》第三条：系统生成回答时，应当优先引用检索到的法规资料；资料不足时，不得编造。",
+    "source": "",
+    "status": null,
+    "source_file": "detail_2.html"
+  }
+]

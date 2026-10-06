@@ -1,0 +1,119 @@
+=== TEXT ===
+The iswalnum function
+Synopsis:
+[1] #include <wctype.h> int iswalnum(wint_t wc);
+Description:
+[2] The iswalnum function tests for any wide character for which iswalpha or iswdigit is true.
+
+=== CODE ===
+/*
+ * 测试 C99 7.25.2.1.1 —— iswalnum 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，调用 iswalnum(wint_t)，验证
+ *             iswalnum(wc) == (iswalpha(wc) || iswdigit(wc)) 对所有 wc 成立，
+ *             且返回值为 int（非零表示真，零表示假）。
+ *   负向测试：违反约束的代码应导致编译报错（放在 #if 0 中）。
+ *
+ * 覆盖段落：
+ *   [1] Synopsis：头文件 <wctype.h>，原型 int iswalnum(wint_t wc);
+ *   [2] Description：iswalnum 为真当且仅当 iswalpha 或 iswdigit 为真。
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <assert.h>
+#include <limits.h>
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] Synopsis：函数原型为 int iswalnum(wint_t)。
+     * 通过取函数指针并赋给匹配类型，验证返回类型为 int、参数为 wint_t。 */
+    {
+        int (*fp)(wint_t) = iswalnum;   /* [1] 原型匹配检查 */
+        assert(fp != NULL);
+    }
+
+    /* [2] 核心语义：iswalnum(wc) 为真 <=> iswalpha(wc) || iswdigit(wc)。
+     * 在一段宽字符范围内逐点比较，覆盖字母、数字、标点、空白、控制字符等。 */
+    {
+        wint_t wc;
+        for (wc = 0; wc < 0x2000; ++wc) {
+            int a = iswalnum(wc);
+            int b = (iswalpha(wc) || iswdigit(wc));
+            /* 两者必须一致（真值等价） */
+            assert((a != 0) == (b != 0));
+        }
+    }
+
+    /* [2] 具体已知字符的语义验证（使用宽字符字面量 L'...'）。 */
+    {
+        /* 字母：iswalpha 为真 => iswalnum 为真 */
+        assert(iswalnum(L'A') != 0);
+        assert(iswalnum(L'z') != 0);
+        assert(iswalnum(L'a') != 0);
+
+        /* 数字：iswdigit 为真 => iswalnum 为真 */
+        assert(iswalnum(L'0') != 0);
+        assert(iswalnum(L'5') != 0);
+        assert(iswalnum(L'9') != 0);
+
+        /* 非字母非数字：iswalnum 应为假 */
+        assert(iswalnum(L' ') == 0);   /* 空格 */
+        assert(iswalnum(L'+') == 0);   /* 标点 */
+        assert(iswalnum(L'\n') == 0);  /* 控制字符 */
+        assert(iswalnum(L'.') == 0);
+    }
+
+    /* [2] 与 iswalpha / iswdigit 的逐字符一致性（针对常见 ASCII 范围）。 */
+    {
+        wint_t wc;
+        for (wc = 0; wc < 128; ++wc) {
+            int expected = (iswalpha(wc) || iswdigit(wc)) ? 1 : 0;
+            int got = iswalnum(wc) ? 1 : 0;
+            assert(got == expected);
+        }
+    }
+
+    /* [2] 返回值语义：返回 int，非零表示真，零表示假。 */
+    {
+        int r = iswalnum(L'7');
+        assert(r != 0);            /* 真值非零 */
+        int r2 = iswalnum(L'@');
+        assert(r2 == 0);           /* 假值为零 */
+    }
+
+    /* [1] 参数类型为 wint_t，可接受 WEOF 等特殊值而不崩溃（仅验证可调用）。 */
+    {
+        (void)iswalnum((wint_t)WEOF);
+        (void)iswalnum((wint_t)0);
+    }
+
+    printf("iswalnum: all positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /* 违反约束「iswalnum 的参数类型为 wint_t」：
+     * 传入结构体类型实参，gcc -std=c99 应报错（类型不兼容）。 */
+    struct S { int x; } s;
+    iswalnum(s);
+
+    /* 违反约束「iswalnum 返回 int，不可作为左值被赋值」：
+     * 对函数调用结果赋值，gcc -std=c99 应报错（非左值）。 */
+    iswalnum(L'A') = 1;
+
+    /* 违反约束「iswalnum 需要 <wctype.h> 中的原型」：
+     * 若未包含头文件而隐式声明，则与原型冲突；
+     * 此处演示用错误参数个数调用，gcc -std=c99 应报错。 */
+    iswalnum(L'A', L'B');
+
+    /* 违反约束「iswalnum 参数为算术/整型 wint_t，不能传指针」：
+     * 传入指针类型，gcc -std=c99 应报错。 */
+    int *p = 0;
+    iswalnum(p);
+#endif
+
+    return 0;
+}

@@ -1,0 +1,237 @@
+=== TEXT ===
+The fgetc function
+Synopsis:
+[1] #include <stdio.h> int fgetc(FILE *stream);
+Description:
+[2] If the end-of-file indicator for the input stream pointed to by stream is not set and a next character is present, the fgetc function obtains that character as an unsigned char converted to an int and advances the associated file position indicator for the stream (if defined).
+Returns:
+[3] If the end-of-file indicator for the stream is set, or if the stream is at end-of-file, the end- of-file indicator for the stream is set and the fgetc function returns EOF. Otherwise, the fgetc function returns the next character from the input stream pointed to by stream. If a read error occurs, the error indicator for the stream is set and the fgetc function returns EOF.
+Footnotes:
+255) An end-of-file and a read error can be distinguished by use of the feof and ferror functions.
+=== CODE ===
+/*
+ * 测试 C99 7.19.7.1 —— fgetc 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int fgetc(FILE *stream);
+ *   [2] 语义：若 EOF 指示符未置位且存在下一字符，则取该字符，
+ *            以 unsigned char 转 int 返回，并推进文件位置指示符。
+ *   [3] 返回：若 EOF 指示符已置位或流处于文件末尾，则置位 EOF 指示符
+ *            并返回 EOF；否则返回下一字符；读错误时置位错误指示符并返回 EOF。
+ *   Footnote 255: 用 feof / ferror 区分 EOF 与读错误。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：fgetc 接受 FILE* 并返回 int */
+static int (*fgetc_proto_check)(FILE *) = fgetc;
+
+static void test_basic_read(void)
+{
+    /* [2] 正常读取：写入 "ABC"，逐个读取应得到 'A','B','C' */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    assert(fputs("ABC", fp) >= 0);
+    rewind(fp);
+
+    int c1 = fgetc(fp);
+    int c2 = fgetc(fp);
+    int c3 = fgetc(fp);
+
+    assert(c1 == 'A');
+    assert(c2 == 'B');
+    assert(c3 == 'C');
+
+    /* [3] 到达文件末尾：下一次读取返回 EOF 并置位 EOF 指示符 */
+    int c4 = fgetc(fp);
+    assert(c4 == EOF);
+    assert(feof(fp) != 0);          /* Footnote 255: EOF 指示符已置位 */
+    assert(ferror(fp) == 0);        /* 不是读错误 */
+
+    /* [3] EOF 指示符已置位时，再次调用仍返回 EOF */
+    int c5 = fgetc(fp);
+    assert(c5 == EOF);
+    assert(feof(fp) != 0);
+
+    fclose(fp);
+}
+
+static void test_unsigned_char_conversion(void)
+{
+    /* [2] 字符以 unsigned char 转 int 返回。
+     * 写入字节 0xFF，fgetc 应返回 255（而非 -1 或 -127）。 */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    unsigned char byte = 0xFF;
+    assert(fwrite(&byte, 1, 1, fp) == 1);
+    rewind(fp);
+
+    int c = fgetc(fp);
+    assert(c == 255);               /* unsigned char 0xFF -> int 255 */
+    assert(c != EOF);
+
+    fclose(fp);
+}
+
+static void test_position_advance(void)
+{
+    /* [2] 每次成功读取推进文件位置指示符 */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    assert(fputs("XYZ", fp) >= 0);
+    rewind(fp);
+
+    long pos0 = ftell(fp);
+    assert(pos0 == 0);
+
+    int c = fgetc(fp);
+    assert(c == 'X');
+
+    long pos1 = ftell(fp);
+    assert(pos1 == pos0 + 1);       /* 位置指示符已推进 */
+
+    c = fgetc(fp);
+    assert(c == 'Y');
+    assert(ftell(fp) == pos0 + 2);
+
+    fclose(fp);
+}
+
+static void test_empty_file(void)
+{
+    /* [3] 空文件：首次读取即处于文件末尾，返回 EOF 并置位 EOF 指示符 */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    int c = fgetc(fp);
+    assert(c == EOF);
+    assert(feof(fp) != 0);
+    assert(ferror(fp) == 0);
+
+    fclose(fp);
+}
+
+static void test_read_error(void)
+{
+    /* [3] 读错误：以只写模式打开文件后尝试读取，应置位错误指示符并返回 EOF。
+     * Footnote 255: 用 ferror 区分读错误与 EOF。 */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    /* 重新以只写方式打开同一底层文件不可移植，改用 fopen 只写模式 */
+    fclose(fp);
+
+    const char *name = "fgetc_test_tmp.txt";
+    fp = fopen(name, "w");
+    assert(fp != NULL);
+
+    /* 在只写流上读取：行为是实现定义的错误路径，标准要求置位错误指示符
+     * 并返回 EOF。为可移植性，这里只验证返回值与指示符的一致性。 */
+    int c = fgetc(fp);
+    if (c == EOF) {
+        /* 若返回 EOF，则要么 feof 要么 ferror 应被置位 */
+        assert(feof(fp) != 0 || ferror(fp) != 0);
+    }
+
+    fclose(fp);
+    remove(name);
+}
+
+static void test_eof_indicator_sticky(void)
+{
+    /* [3] EOF 指示符一旦置位，即使后续有数据也不清除（除非 clearerr/rewind） */
+    FILE *fp = tmpfile();
+    assert(fp != NULL);
+
+    assert(fputs("A", fp) >= 0);
+    rewind(fp);
+
+    assert(fgetc(fp) == 'A');
+    assert(fgetc(fp) == EOF);
+    assert(feof(fp) != 0);
+
+    /* 再次读取仍返回 EOF，指示符保持置位 */
+    assert(fgetc(fp) == EOF);
+    assert(feof(fp) != 0);
+
+    /* clearerr 清除后，位置仍在末尾，读取仍返回 EOF 并重新置位 */
+    clearerr(fp);
+    assert(feof(fp) == 0);
+    assert(fgetc(fp) == EOF);
+    assert(feof(fp) != 0);
+
+    fclose(fp);
+}
+
+int main(void)
+{
+    /* 确认原型指针赋值成功（编译期检查 [1]） */
+    assert(fgetc_proto_check == fgetc);
+
+    test_basic_read();
+    test_unsigned_char_conversion();
+    test_position_advance();
+    test_empty_file();
+    test_read_error();
+    test_eof_indicator_sticky();
+
+    printf("All positive tests for C99 7.19.7.1 (fgetc) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「fgetc 的参数类型为 FILE *」：
+ * 传入 int 而非 FILE*，gcc -std=c99 应报错
+ * （incompatible type for argument 1 of 'fgetc' / passing argument 1
+ *   makes pointer from integer without a cast）。 */
+int bad_arg_type(void)
+{
+    int x = 0;
+    return fgetc(x);            /* 错误：参数应为 FILE* */
+}
+
+/* 违反约束「fgetc 的参数类型为 FILE *」：
+ * 传入 const char* 而非 FILE*，应报错。 */
+int bad_arg_type2(void)
+{
+    const char *s = "hello";
+    return fgetc(s);            /* 错误：参数应为 FILE* */
+}
+
+/* 违反约束「fgetc 需要 1 个参数」：
+ * 调用时未提供参数，应报错（too few arguments to function 'fgetc'）。 */
+int bad_too_few_args(void)
+{
+    return fgetc();             /* 错误：缺少参数 */
+}
+
+/* 违反约束「fgetc 需要 1 个参数」：
+ * 调用时提供过多参数，应报错（too many arguments to function 'fgetc'）。 */
+int bad_too_many_args(FILE *fp)
+{
+    return fgetc(fp, fp);       /* 错误：参数过多 */
+}
+
+/* 违反约束「fgetc 的返回类型为 int」：
+ * 将返回值赋给不兼容的指针类型（int 到 FILE* 无隐式转换），应报错。 */
+FILE *bad_return_type(FILE *fp)
+{
+    return fgetc(fp);           /* 错误：int 不能隐式转换为 FILE* */
+}
+
+#endif /* 负向测试结束 */

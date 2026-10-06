@@ -1,0 +1,152 @@
+[
+ {
+  "article": "7.1",
+  "header": "Introduction",
+  "coverage": 86.8,
+  "subclauses": 4
+ },
+ {
+  "article": "7.2",
+  "header": "assert.h",
+  "coverage": 95.0,
+  "subclauses": 2
+ },
+ {
+  "article": "7.3",
+  "header": "complex.h",
+  "coverage": 96.0,
+  "subclauses": 26
+ },
+ {
+  "article": "7.4",
+  "header": "ctype.h",
+  "coverage": 98.8,
+  "subclauses": 16
+ },
+ {
+  "article": "7.5",
+  "header": "errno.h",
+  "coverage": 95.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.6",
+  "header": "fenv.h",
+  "coverage": 91.8,
+  "subclauses": 16
+ },
+ {
+  "article": "7.7",
+  "header": "float.h",
+  "coverage": 95.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.8",
+  "header": "inttypes.h",
+  "coverage": 94.7,
+  "subclauses": 6
+ },
+ {
+  "article": "7.9",
+  "header": "iso646.h",
+  "coverage": 100.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.10",
+  "header": "limits.h",
+  "coverage": 100.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.11",
+  "header": "locale.h",
+  "coverage": 91.0,
+  "subclauses": 3
+ },
+ {
+  "article": "7.12",
+  "header": "math.h",
+  "coverage": 94.6,
+  "subclauses": 72
+ },
+ {
+  "article": "7.13",
+  "header": "setjmp.h",
+  "coverage": 92.7,
+  "subclauses": 3
+ },
+ {
+  "article": "7.14",
+  "header": "signal.h",
+  "coverage": 90.0,
+  "subclauses": 3
+ },
+ {
+  "article": "7.15",
+  "header": "stdarg.h",
+  "coverage": 93.5,
+  "subclauses": 6
+ },
+ {
+  "article": "7.16",
+  "header": "stdbool.h",
+  "coverage": 95.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.17",
+  "header": "stddef.h",
+  "coverage": 90.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.18",
+  "header": "stdint.h",
+  "coverage": 90.9,
+  "subclauses": 17
+ },
+ {
+  "article": "7.19",
+  "header": "stdio.h",
+  "coverage": 90.3,
+  "subclauses": 50
+ },
+ {
+  "article": "7.20",
+  "header": "stdlib.h",
+  "coverage": 95.6,
+  "subclauses": 31
+ },
+ {
+  "article": "7.21",
+  "header": "string.h",
+  "coverage": 94.5,
+  "subclauses": 24
+ },
+ {
+  "article": "7.22",
+  "header": "tgmath.h",
+  "coverage": 90.0,
+  "subclauses": 1
+ },
+ {
+  "article": "7.23",
+  "header": "time.h",
+  "coverage": 89.3,
+  "subclauses": 11
+ },
+ {
+  "article": "7.24",
+  "header": "wchar.h",
+  "coverage": 93.7,
+  "subclauses": 62
+ },
+ {
+  "article": "7.25",
+  "header": "wctype.h",
+  "coverage": 94.0,
+  "subclauses": 25
+ }
+]

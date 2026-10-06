@@ -1,0 +1,130 @@
+=== TEXT ===
+The iswspace function
+Synopsis:
+[1] #include <wctype.h> int iswspace(wint_t wc);
+Description:
+[2] The iswspace function tests for any wide character that corresponds to a locale-specific set of white-space wide characters for which none of iswalnum, iswgraph, or iswpunct is true.
+
+=== CODE ===
+/*
+ * 测试目标：C99 7.25.2.1.10 —— iswspace 函数
+ *
+ * 条款要点：
+ *   [1] 头文件 <wctype.h>，原型 int iswspace(wint_t wc);
+ *   [2] 测试宽字符是否属于“本地化空白宽字符集合”，
+ *       该集合中的字符满足：iswalnum、iswgraph、iswpunct 三者均为假。
+ *
+ * 预期行为：
+ *   - 正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   - 负向测试：违反约束的片段应导致编译报错（放在 #if 0 中，不参与编译）。
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性检查：函数指针类型必须与 int(wint_t) 兼容 */
+static int (*fp_iswspace)(wint_t) = iswspace;
+
+int main(void)
+{
+    /* 使用 C locale，保证空白字符集合可预测 */
+    setlocale(LC_ALL, "C");
+
+    /* [1] 返回值类型为 int，可赋值给 int 变量 */
+    int r;
+
+    /* [2] 典型空白宽字符：空格、制表、换行、回车、换页、垂直制表 */
+    r = iswspace(L' ');
+    assert(r != 0);
+    r = iswspace(L'\t');
+    assert(r != 0);
+    r = iswspace(L'\n');
+    assert(r != 0);
+    r = iswspace(L'\r');
+    assert(r != 0);
+    r = iswspace(L'\f');
+    assert(r != 0);
+    r = iswspace(L'\v');
+    assert(r != 0);
+
+    /* [2] 非空白字符：字母、数字、标点、图形字符应返回 0 */
+    assert(iswspace(L'A') == 0);
+    assert(iswspace(L'z') == 0);
+    assert(iswspace(L'0') == 0);
+    assert(iswspace(L'9') == 0);
+    assert(iswspace(L'!') == 0);
+    assert(iswspace(L'@') == 0);
+    assert(iswspace(L'~') == 0);
+
+    /* [2] 语义一致性：若 iswspace 为真，则 iswalnum/iswgraph/iswpunct 均为假 */
+    {
+        wint_t samples[] = {
+            L' ', L'\t', L'\n', L'\r', L'\f', L'\v',
+            L'A', L'z', L'0', L'9', L'!', L'@', L'~', L'_'
+        };
+        size_t i;
+        for (i = 0; i < sizeof(samples) / sizeof(samples[0]); ++i) {
+            wint_t wc = samples[i];
+            if (iswspace(wc)) {
+                assert(iswalnum(wc) == 0);
+                assert(iswgraph(wc) == 0);
+                assert(iswpunct(wc) == 0);
+            }
+        }
+    }
+
+    /* [2] 反向一致性：若 iswalnum 或 iswgraph 或 iswpunct 为真，则 iswspace 必为假 */
+    {
+        wint_t samples[] = {
+            L'A', L'z', L'0', L'9', L'!', L'@', L'~', L'_', L'+', L'='
+        };
+        size_t i;
+        for (i = 0; i < sizeof(samples) / sizeof(samples[0]); ++i) {
+            wint_t wc = samples[i];
+            if (iswalnum(wc) || iswgraph(wc) || iswpunct(wc)) {
+                assert(iswspace(wc) == 0);
+            }
+        }
+    }
+
+    /* [1] 通过函数指针调用，验证原型签名 */
+    assert(fp_iswspace(L' ') != 0);
+    assert(fp_iswspace(L'A') == 0);
+
+    /* [1] 参数类型为 wint_t，可接受 WEOF 而不崩溃（返回值未规定，仅验证可调用） */
+    (void)iswspace(WEOF);
+
+    printf("iswspace: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用参数个数必须与原型一致」：
+ * iswspace 原型只接受 1 个参数，传 2 个参数，gcc -std=c99 应报错。 */
+#include <wctype.h>
+int bad1 = iswspace(L' ', L'\t');
+
+/* 违反约束「函数调用参数个数必须与原型一致」：
+ * 不传参数，gcc -std=c99 应报错。 */
+int bad2 = iswspace();
+
+/* 违反约束「函数必须已声明」：
+ * 未包含 <wctype.h> 且未声明 iswspace 时调用，C99 禁止隐式函数声明，
+ * gcc -std=c99 应报错（implicit declaration of function）。 */
+int bad3(void) { return iswspace(L' '); }
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * 函数调用结果不是左值，不能赋值，gcc -std=c99 应报错。 */
+void bad4(void) { iswspace(L' ') = 1; }
+
+/* 违反约束「取地址操作数必须是左值或函数指示符」：
+ * 函数调用结果不是左值，不能取地址，gcc -std=c99 应报错。 */
+void bad5(void) { int *p = &iswspace(L' '); (void)p; }
+
+#endif

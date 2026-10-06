@@ -1,0 +1,8 @@
+{
+  "backend": "hashing",
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "dim": 384,
+  "count": 6,
+  "source_chunks": "D:\\zzq\\自动驾驶\\世界模型\\软件工程-需求+设计\\qa_system-frame-opti\\qa_system-frame-opti\\qa_system\\data_cleaned\\chunks.jsonl",
+  "source_laws": "D:\\zzq\\自动驾驶\\世界模型\\软件工程-需求+设计\\qa_system-frame-opti\\qa_system-frame-opti\\qa_system\\data_cleaned\\laws.json"
+}

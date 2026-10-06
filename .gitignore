@@ -1,0 +1,39 @@
+# 密钥 / 环境变量（保留 .env.example 模板）
+.env
+*.env
+!.env.example
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.tox/
+
+# Node / 前端依赖与构建产物
+node_modules/
+dist/
+build/
+.cache/
+dist-ssr/
+
+# IDE / 系统
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 运行时数据库（会话状态）
+*.db
+*.db-wal
+*.db-shm

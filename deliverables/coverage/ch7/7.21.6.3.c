@@ -1,0 +1,165 @@
+/*
+ * 测试目标：C99 7.21.6.3 —— strlen 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 条款要点：
+ *   [1] 原型：size_t strlen(const char *s);  声明于 <string.h>
+ *   [2] 计算 s 所指向字符串的长度
+ *   [3] 返回终止空字符之前的字符个数
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：strlen 的返回类型为 size_t，参数为 const char *。
+ *     通过取函数指针类型来静态验证原型签名。 */
+static size_t (*strlen_ptr)(const char *) = strlen;
+
+int main(void)
+{
+    /* [1] 返回类型为 size_t（无符号整型），参数为 const char * */
+    {
+        size_t (*p)(const char *) = strlen;
+        assert(p == strlen_ptr);
+    }
+
+    /* [2][3] 空字符串：终止空字符之前有 0 个字符 */
+    {
+        const char *s = "";
+        assert(strlen(s) == 0);
+    }
+
+    /* [2][3] 普通字符串：长度为终止空字符之前的字符个数 */
+    {
+        const char *s = "hello";
+        assert(strlen(s) == 5);
+    }
+
+    /* [2][3] 含空格的字符串 */
+    {
+        const char *s = "hello world";
+        assert(strlen(s) == 11);
+    }
+
+    /* [2][3] 字符串中的内嵌转义字符（\0 之前的部分） */
+    {
+        const char *s = "abc\tdef";
+        assert(strlen(s) == 7);
+    }
+
+    /* [2][3] 字符数组（非字符串字面量），以 '\0' 结尾 */
+    {
+        char buf[10];
+        buf[0] = 'a';
+        buf[1] = 'b';
+        buf[2] = 'c';
+        buf[3] = '\0';
+        assert(strlen(buf) == 3);
+    }
+
+    /* [2][3] 数组长度大于字符串长度：只数到第一个 '\0' */
+    {
+        char buf[8] = "xy";   /* 剩余元素被零初始化 */
+        assert(strlen(buf) == 2);
+    }
+
+    /* [2][3] 字符串中间出现 '\0'：长度只到第一个 '\0' */
+    {
+        char buf[6] = { 'a', 'b', '\0', 'c', 'd', '\0' };
+        assert(strlen(buf) == 2);
+    }
+
+    /* [2][3] 返回类型为 size_t（无符号），与 0 比较安全 */
+    {
+        const char *s = "abcdefghij";
+        size_t n = strlen(s);
+        assert(n == 10);
+        assert(n > 0);
+    }
+
+    /* [2][3] 单字符字符串 */
+    {
+        assert(strlen("A") == 1);
+    }
+
+    /* [2][3] 长字符串：验证返回值随长度线性增长 */
+    {
+        const char *s = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        assert(strlen(s) == 36);
+    }
+
+    /* [2][3] 通过 const char * 传入（参数为 const 限定） */
+    {
+        const char *s = "const-qualified";
+        assert(strlen(s) == 15);
+    }
+
+    /* [2][3] 与 sizeof 对比：strlen 不含终止空字符，sizeof 含 */
+    {
+        const char *s = "abc";
+        assert(strlen(s) == 3);
+        assert(sizeof("abc") == 4);   /* 3 个字符 + '\0' */
+    }
+
+    printf("All positive tests for C99 7.21.6.3 (strlen) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「strlen 的参数类型为 const char *」：
+ * 传入 int 类型实参，gcc -std=c99 应报错
+ * （int 不能隐式转换为 const char *，且无原型时也会产生约束违反）。 */
+{
+    int x = 42;
+    size_t n = strlen(x);   /* 期望：编译错误，参数类型不兼容 */
+}
+
+/* 违反约束「strlen 的参数类型为 const char *」：
+ * 传入 double 类型实参，gcc -std=c99 应报错。 */
+{
+    double d = 3.14;
+    size_t n = strlen(d);   /* 期望：编译错误，参数类型不兼容 */
+}
+
+/* 违反约束「strlen 的参数类型为 const char *」：
+ * 传入结构体类型实参，gcc -std=c99 应报错。 */
+{
+    struct S { int a; } s;
+    size_t n = strlen(s);   /* 期望：编译错误，参数类型不兼容 */
+}
+
+/* 违反约束「strlen 的参数个数为 1」：
+ * 不传实参，gcc -std=c99 应报错。 */
+{
+    size_t n = strlen();    /* 期望：编译错误，实参个数不匹配 */
+}
+
+/* 违反约束「strlen 的参数个数为 1」：
+ * 传两个实参，gcc -std=c99 应报错。 */
+{
+    size_t n = strlen("a", "b");   /* 期望：编译错误，实参个数过多 */
+}
+
+/* 违反约束「strlen 的返回类型为 size_t，不可作为左值赋值」：
+ * 对函数调用结果赋值，gcc -std=c99 应报错。 */
+{
+    strlen("abc") = 5;      /* 期望：编译错误，非左值不能赋值 */
+}
+
+/* 违反约束「strlen 的返回类型为 size_t，不可取地址赋值」：
+ * 对函数调用结果取地址并赋值，gcc -std=c99 应报错。 */
+{
+    &strlen("abc") = (size_t *)0;   /* 期望：编译错误，非左值 */
+}
+
+#endif /* 负向测试结束 */

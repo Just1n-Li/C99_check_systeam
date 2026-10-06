@@ -1,0 +1,254 @@
+=== ARTICLE 7.21.5.8 ===
+--- TEXT ---
+The strtok function
+Synopsis:
+[1] #include <string.h> char *strtok(char * restrict s1, const char * restrict s2);
+Description:
+[2] A sequence of calls to the strtok function breaks the string pointed to by s1 into a sequence of tokens, each of which is delimited by a character from the string pointed to by s2. The first call in the sequence has a non-null first argument; subsequent calls in the sequence have a null first argument. The separator string pointed to by s2 may be different from call to call.
+[3] The first call in the sequence searches the string pointed to by s1 for the first character that is not contained in the current separator string pointed to by s2. If no such character is found, then there are no tokens in the string pointed to by s1 and the strtok function returns a null pointer. If such a character is found, it is the start of the first token.
+[4] The strtok function then searches from there for a character that is contained in the current separator string. If no such character is found, the current token extends to the end of the string pointed to by s1, and subsequent searches for a token will return a null pointer. If such a character is found, it is overwritten by a null character, which terminates the current token. The strtok function saves a pointer to the following character, from which the next search for a token will start.
+[5] Each subsequent call, with a null pointer as the value of the first argument, starts searching from the saved pointer and behaves as described above.
+[6] The implementation shall behave as if no library function calls the strtok function.
+Returns:
+[7] The strtok function returns a pointer to the first character of a token, or a null pointer if there is no token.
+[8] EXAMPLE #include <string.h> static char str[] = "?a???b,,,#c"; char *t; t = strtok(str, "?"); // t points to the token "a" t = strtok(NULL, ","); // t points to the token "??b" t = strtok(NULL, "#,"); // t points to the token "c" t = strtok(NULL, "?"); // t is a null pointer
+--- CODE ---
+/*
+ * 测试条款：C99 7.21.5.8  The strtok function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立），
+ *             验证 strtok 的分词语义、分隔符串可变、保存指针、
+ *             返回空指针、以及 EXAMPLE 中的结果。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：[1] 原型、[2] 序列调用语义、[3] 首个 token 起点、
+ *           [4] token 终止与保存指针、[5] 后续调用、[6] 库函数不调用 strtok、
+ *           [7] 返回值、[8] EXAMPLE。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：strtok 的签名应为
+ *     char *strtok(char * restrict s1, const char * restrict s2);
+ * 通过函数指针赋值来静态验证返回类型与参数类型。 */
+static char *(*fp_strtok)(char * restrict, const char * restrict) = strtok;
+
+/* [8] EXAMPLE 的复现：使用 static 数组，因为 strtok 会修改它 */
+static char example_str[] = "?a???b,,,#c";
+
+static void test_example(void)
+{
+    char *t;
+
+    /* [8] t = strtok(str, "?");  // t points to the token "a" */
+    t = strtok(example_str, "?");
+    assert(t != NULL);
+    assert(strcmp(t, "a") == 0);
+
+    /* [8] t = strtok(NULL, ","); // t points to the token "??b" */
+    t = strtok(NULL, ",");
+    assert(t != NULL);
+    assert(strcmp(t, "??b") == 0);
+
+    /* [8] t = strtok(NULL, "#,"); // t points to the token "c" */
+    t = strtok(NULL, "#,");
+    assert(t != NULL);
+    assert(strcmp(t, "c") == 0);
+
+    /* [8] t = strtok(NULL, "?"); // t is a null pointer */
+    t = strtok(NULL, "?");
+    assert(t == NULL);
+}
+
+/* [2][3][4][5][7] 基本分词语义：多个 token、分隔符串可变 */
+static void test_basic_tokens(void)
+{
+    char buf[] = "hello,world;foo bar";
+    char *t;
+
+    /* [2] 第一次调用：非空第一实参 */
+    t = strtok(buf, ",; ");
+    assert(t != NULL && strcmp(t, "hello") == 0);   /* [7] 返回 token 首字符指针 */
+
+    /* [2][5] 后续调用：空第一实参；[2] 分隔符串可逐次不同 */
+    t = strtok(NULL, ",; ");
+    assert(t != NULL && strcmp(t, "world") == 0);
+
+    t = strtok(NULL, "; ");      /* 分隔符串改变 */
+    assert(t != NULL && strcmp(t, "foo") == 0);
+
+    t = strtok(NULL, " ");
+    assert(t != NULL && strcmp(t, "bar") == 0);
+
+    /* [4] 最后一个 token 延伸到串尾，后续搜索返回空指针 */
+    t = strtok(NULL, " ");
+    assert(t == NULL);           /* [7] 无 token 时返回空指针 */
+}
+
+/* [3] 若 s1 中所有字符都在分隔符串中，则没有 token，返回空指针 */
+static void test_no_token(void)
+{
+    char buf[] = "????";
+    char *t = strtok(buf, "?");
+    assert(t == NULL);           /* [3][7] */
+}
+
+/* [3] 前导分隔符被跳过，token 从第一个非分隔符字符开始 */
+static void test_leading_separators(void)
+{
+    char buf[] = ";;;abc;;;def";
+    char *t;
+
+    t = strtok(buf, ";");
+    assert(t != NULL && strcmp(t, "abc") == 0);   /* [3] 跳过前导分隔符 */
+
+    t = strtok(NULL, ";");
+    assert(t != NULL && strcmp(t, "def") == 0);
+
+    t = strtok(NULL, ";");
+    assert(t == NULL);
+}
+
+/* [4] 验证 token 被 null 字符终止（原地修改），且保存指针指向后续字符 */
+static void test_inplace_modification(void)
+{
+    char buf[] = "aa,bb";
+    char *t;
+
+    t = strtok(buf, ",");
+    assert(t != NULL && strcmp(t, "aa") == 0);
+    /* [4] 分隔符被 '\0' 覆盖：buf 现在为 "aa\0bb" */
+    assert(buf[0] == 'a' && buf[1] == 'a' && buf[2] == '\0');
+    assert(buf[3] == 'b' && buf[4] == 'b');
+
+    /* [4][5] 保存的指针指向 'b'，下一次搜索从这里开始 */
+    t = strtok(NULL, ",");
+    assert(t != NULL && strcmp(t, "bb") == 0);
+    assert(t == &buf[3]);        /* 保存指针指向分隔符后的字符 */
+
+    t = strtok(NULL, ",");
+    assert(t == NULL);
+}
+
+/* [2] 空分隔符串：没有字符属于分隔符串，整个串为一个 token */
+static void test_empty_separators(void)
+{
+    char buf[] = "abc";
+    char *t;
+
+    t = strtok(buf, "");
+    assert(t != NULL && strcmp(t, "abc") == 0);   /* [4] 延伸到串尾 */
+
+    t = strtok(NULL, "");
+    assert(t == NULL);           /* [4] 后续搜索返回空指针 */
+}
+
+/* [6] 实现行为如同没有库函数调用 strtok：
+ *     即 strtok 使用内部静态状态，用户代码可正常使用；
+ *     这里通过连续两次独立的分词序列（先跑完一个再跑另一个）
+ *     来间接验证状态被正确重置。 */
+static void test_sequence_reset(void)
+{
+    char a[] = "1,2";
+    char b[] = "x;y";
+    char *t;
+
+    t = strtok(a, ",");
+    assert(t != NULL && strcmp(t, "1") == 0);
+    t = strtok(NULL, ",");
+    assert(t != NULL && strcmp(t, "2") == 0);
+    t = strtok(NULL, ",");
+    assert(t == NULL);
+
+    /* 新的序列：以非空第一实参开始，重新开始分词 */
+    t = strtok(b, ";");
+    assert(t != NULL && strcmp(t, "x") == 0);
+    t = strtok(NULL, ";");
+    assert(t != NULL && strcmp(t, "y") == 0);
+    t = strtok(NULL, ";");
+    assert(t == NULL);
+}
+
+int main(void)
+{
+    /* 使用函数指针，确保 [1] 的原型被引用 */
+    (void)fp_strtok;
+
+    test_example();              /* [8] */
+    test_basic_tokens();         /* [2][3][4][5][7] */
+    test_no_token();             /* [3][7] */
+    test_leading_separators();   /* [3] */
+    test_inplace_modification(); /* [4][5] */
+    test_empty_separators();     /* [2][4] */
+    test_sequence_reset();       /* [6] */
+
+    printf("All positive tests for C99 7.21.5.8 strtok passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+
+#if 0
+
+/* 违反约束「[1] 第一参数类型为 char *（非 const）」：
+ * 传入字符串字面量（类型为 char[N]，但作为 const 语义的只读对象，
+ * 且 strtok 会修改它）。更直接地，传入 const char * 会因
+ * 丢弃 const 限定符而报错。
+ * 期望：gcc -std=c99 报 "passing argument 1 of 'strtok' discards
+ *       'const' qualifier from pointer target type" 或类似错误。 */
+void neg_const_first_arg(void)
+{
+    const char *s = "a,b,c";
+    char *t = strtok(s, ",");   /* 错误：丢弃 const 限定符 */
+    (void)t;
+}
+
+/* 违反约束「[1] 第二参数类型为 const char *」：
+ * 传入非指针类型（如 int），参数类型不匹配。
+ * 期望：gcc -std=c99 报 "passing argument 2 of 'strtok' makes pointer
+ *       from integer without a cast" 或类型不兼容错误。 */
+void neg_wrong_second_arg(void)
+{
+    char buf[] = "a,b";
+    char *t = strtok(buf, 42);  /* 错误：第二实参应为 const char * */
+    (void)t;
+}
+
+/* 违反约束「[1] 返回类型为 char *」：
+ * 将返回值赋给不兼容的指针类型（如 int *），需要诊断。
+ * 期望：gcc -std=c99 报 "assignment from incompatible pointer type"
+ *       或 "initialization from incompatible pointer type"。 */
+void neg_wrong_return_type(void)
+{
+    char buf[] = "a,b";
+    int *p = strtok(buf, ",");  /* 错误：char * 赋给 int * */
+    (void)p;
+}
+
+/* 违反约束「[1] 函数原型要求两个实参」：
+ * 调用时实参个数不足。
+ * 期望：gcc -std=c99 报 "too few arguments to function 'strtok'"。 */
+void neg_too_few_args(void)
+{
+    char buf[] = "a,b";
+    char *t = strtok(buf);      /* 错误：缺少第二实参 */
+    (void)t;
+}
+
+/* 违反约束「[1] 函数原型要求两个实参」：
+ * 调用时实参个数过多。
+ * 期望：gcc -std=c99 报 "too many arguments to function 'strtok'"。 */
+void neg_too_many_args(void)
+{
+    char buf[] = "a,b";
+    char *t = strtok(buf, ",", "extra");  /* 错误：实参过多 */
+    (void)t;
+}
+
+#endif /* 负向测试结束 */

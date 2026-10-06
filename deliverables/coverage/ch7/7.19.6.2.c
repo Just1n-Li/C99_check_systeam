@@ -1,0 +1,401 @@
+/*
+ * 测试条款：C99 7.19.6.2 The fscanf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 说明：fscanf 的许多“约束”实际上是“shall”形式的语义要求，
+ *       违反后属于未定义行为（UB），编译器不强制报错，因此不作为负向测试。
+ *       负向测试只针对真正的约束（如参数类型、格式串结构等）。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <wchar.h>
+#include <limits.h>
+
+/* 辅助：把字符串写入临时文件，返回可读的 FILE* */
+static FILE *make_file(const char *content)
+{
+    FILE *f = tmpfile();
+    assert(f != NULL);
+    fputs(content, f);
+    rewind(f);
+    return f;
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 函数原型：fscanf(FILE * restrict, const char * restrict, ...) */
+    {
+        FILE *f = make_file("42 hello");
+        int n = 0;
+        char buf[32];
+        int r = fscanf(f, "%d %31s", &n, buf);
+        assert(r == 2);
+        assert(n == 42);
+        assert(strcmp(buf, "hello") == 0);
+        fclose(f);
+    }
+
+    /* [2] 从 stream 读取，按 format 转换并赋值给后续指针参数 */
+    {
+        FILE *f = make_file("3.14");
+        double d = 0.0;
+        int r = fscanf(f, "%lf", &d);
+        assert(r == 1);
+        assert(d > 3.13 && d < 3.15);
+        fclose(f);
+    }
+
+    /* [2] 格式耗尽而参数多余：多余参数被求值但被忽略（不报错） */
+    {
+        FILE *f = make_file("7");
+        int a = 0, b = -1;
+        int r = fscanf(f, "%d", &a, &b); /* b 多余，被忽略 */
+        assert(r == 1);
+        assert(a == 7);
+        assert(b == -1); /* 未被修改 */
+        fclose(f);
+    }
+
+    /* [3] 格式串由指令组成：空白、普通字符、转换说明 */
+    {
+        FILE *f = make_file("   abc 123");
+        char s[16];
+        int n = 0;
+        /* 前导空白 + 普通字符 'a' 'b' 'c' + 空白 + %d */
+        int r = fscanf(f, "   abc %d", &n);
+        assert(r == 1);
+        assert(n == 123);
+        (void)s;
+        fclose(f);
+    }
+
+    /* [3] 赋值抑制符 '*'：不消耗参数 */
+    {
+        FILE *f = make_file("99 100");
+        int n = 0;
+        int r = fscanf(f, "%*d %d", &n);
+        assert(r == 1);
+        assert(n == 100);
+        fclose(f);
+    }
+
+    /* [3] 最大字段宽度 */
+    {
+        FILE *f = make_file("123456789");
+        int n = 0;
+        int r = fscanf(f, "%3d", &n);
+        assert(r == 1);
+        assert(n == 123); /* 只读 3 个字符 */
+        fclose(f);
+    }
+
+    /* [3] 长度修饰符 hh / h / l / ll / j / z / t / L */
+    {
+        FILE *f = make_file("1 2 3 4 5 6 7 8");
+        signed char hh = 0;
+        short h = 0;
+        long l = 0;
+        long long ll = 0;
+        intmax_t j = 0;
+        size_t z = 0;
+        ptrdiff_t t = 0;
+        long double L = 0.0L;
+        int r = fscanf(f, "%hhd %hd %ld %lld %jd %zu %td", &hh, &h, &l, &ll, &j, &z, &t);
+        assert(r == 7);
+        assert(hh == 1 && h == 2 && l == 3 && ll == 4 && j == 5 && z == 6 && t == 7);
+        fclose(f);
+
+        FILE *g = make_file("2.5");
+        r = fscanf(g, "%Lf", &L);
+        assert(r == 1);
+        assert(L > 2.4L && L < 2.6L);
+        fclose(g);
+    }
+
+    /* [4] 指令失败时函数返回：返回成功赋值的项数 */
+    {
+        FILE *f = make_file("abc");
+        int n = 0;
+        int r = fscanf(f, "%d", &n); /* 匹配失败 */
+        assert(r == 0);
+        fclose(f);
+    }
+
+    /* [4] 输入失败（EOF）：返回 EOF */
+    {
+        FILE *f = make_file("");
+        int n = 0;
+        int r = fscanf(f, "%d", &n);
+        assert(r == EOF);
+        fclose(f);
+    }
+
+    /* [5] 空白指令：跳过空白直到第一个非空白字符（保留未读） */
+    {
+        FILE *f = make_file("   \t\n  X");
+        char c = 0;
+        int r = fscanf(f, " %c", &c);
+        assert(r == 1);
+        assert(c == 'X');
+        fclose(f);
+    }
+
+    /* [6] 普通多字节字符指令：匹配则继续，不匹配则失败且字符保留未读 */
+    {
+        FILE *f = make_file("abc");
+        char c = 0;
+        int r = fscanf(f, "ab%c", &c);
+        assert(r == 1);
+        assert(c == 'c');
+        fclose(f);
+    }
+    {
+        FILE *f = make_file("axc");
+        char c = 0;
+        int r = fscanf(f, "ab%c", &c); /* 'b' != 'x'，失败 */
+        assert(r == 0);
+        /* 失败后 'x' 保留未读 */
+        int r2 = fscanf(f, "%c", &c);
+        assert(r2 == 1);
+        assert(c == 'x');
+        fclose(f);
+    }
+
+    /* [8] 除 [, c, n 外，转换前跳过空白 */
+    {
+        FILE *f = make_file("   42");
+        int n = 0;
+        int r = fscanf(f, "%d", &n);
+        assert(r == 1 && n == 42);
+        fclose(f);
+    }
+    /* [8] %c 不跳过空白 */
+    {
+        FILE *f = make_file("  Z");
+        char c = 0;
+        int r = fscanf(f, "%c", &c);
+        assert(r == 1);
+        assert(c == ' '); /* 空白被读入 */
+        fclose(f);
+    }
+    /* [8] %[ 不跳过空白 */
+    {
+        FILE *f = make_file("  abc");
+        char buf[16] = {0};
+        int r = fscanf(f, "%[ a]", buf);
+        assert(r == 1);
+        assert(buf[0] == ' '); /* 空白被读入 */
+        fclose(f);
+    }
+
+    /* [9] 输入项是最长匹配序列，不超过字段宽度 */
+    {
+        FILE *f = make_file("12345abc");
+        int n = 0;
+        int r = fscanf(f, "%d", &n);
+        assert(r == 1);
+        assert(n == 12345);
+        /* 后续 'a' 保留未读 */
+        char c = 0;
+        r = fscanf(f, "%c", &c);
+        assert(r == 1 && c == 'a');
+        fclose(f);
+    }
+
+    /* [9] 输入项长度为 0 时匹配失败 */
+    {
+        FILE *f = make_file("abc");
+        int n = 0;
+        int r = fscanf(f, "%d", &n);
+        assert(r == 0); /* 匹配失败 */
+        fclose(f);
+    }
+
+    /* [10] %n 不消耗输入，只记录已读字符数 */
+    {
+        FILE *f = make_file("12ab");
+        int n = 0, count = -1;
+        int r = fscanf(f, "%d%n", &n, &count);
+        assert(r == 1);
+        assert(n == 12);
+        assert(count == 2);
+        fclose(f);
+    }
+
+    /* [10] 赋值抑制 * 时不消耗参数 */
+    {
+        FILE *f = make_file("55 66");
+        int n = 0;
+        int r = fscanf(f, "%*d %d", &n);
+        assert(r == 1 && n == 66);
+        fclose(f);
+    }
+
+    /* [11] 长度修饰符 l 用于 c/s/[ 时指向 wchar_t */
+    {
+        FILE *f = make_file("abc");
+        wchar_t wbuf[8] = {0};
+        int r = fscanf(f, "%ls", wbuf);
+        assert(r == 1);
+        assert(wbuf[0] == L'a' && wbuf[1] == L'b' && wbuf[2] == L'c');
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 d / i / o / u / x / X */
+    {
+        FILE *f = make_file("42 0x1A 17 255 ff");
+        int d = 0, i = 0, o = 0, u = 0, x = 0, X = 0;
+        int r = fscanf(f, "%d %i %o %u %x %X", &d, &i, &o, &u, &x, &X);
+        assert(r == 6);
+        assert(d == 42);
+        assert(i == 0x1A);
+        assert(o == 017);
+        assert(u == 255);
+        assert(x == 0xff);
+        assert(X == 0xff);
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 e / f / g */
+    {
+        FILE *f = make_file("1.5 2.5 3.5");
+        float e = 0, g = 0;
+        double ff = 0;
+        int r = fscanf(f, "%e %f %g", &e, &ff, &g);
+        assert(r == 3);
+        assert(e > 1.4f && e < 1.6f);
+        assert(ff > 2.4 && ff < 2.6);
+        assert(g > 3.4f && g < 3.6f);
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 s：读入非空白字符序列 */
+    {
+        FILE *f = make_file("hello world");
+        char buf[32] = {0};
+        int r = fscanf(f, "%s", buf);
+        assert(r == 1);
+        assert(strcmp(buf, "hello") == 0);
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 c：读入指定数量字符（默认 1） */
+    {
+        FILE *f = make_file("XYZ");
+        char buf[4] = {0};
+        int r = fscanf(f, "%3c", buf);
+        assert(r == 1);
+        assert(buf[0] == 'X' && buf[1] == 'Y' && buf[2] == 'Z');
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 [：扫描集 */
+    {
+        FILE *f = make_file("abc123def");
+        char buf[32] = {0};
+        int r = fscanf(f, "%[a-z]", buf);
+        assert(r == 1);
+        assert(strcmp(buf, "abc") == 0);
+        fclose(f);
+    }
+    /* [12] 扫描集取反 ^ */
+    {
+        FILE *f = make_file("abc123");
+        char buf[32] = {0};
+        int r = fscanf(f, "%[^0-9]", buf);
+        assert(r == 1);
+        assert(strcmp(buf, "abc") == 0);
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 p：指针 */
+    {
+        FILE *f = make_file("0x1234");
+        void *p = NULL;
+        int r = fscanf(f, "%p", &p);
+        assert(r == 1);
+        assert(p != NULL);
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 n：不消耗输入 */
+    {
+        FILE *f = make_file("abc");
+        int count = -1;
+        int r = fscanf(f, "%n", &count);
+        assert(r == 0); /* %n 不增加返回值 */
+        assert(count == 0);
+        fclose(f);
+    }
+
+    /* [12] 转换说明符 %%：匹配一个 % */
+    {
+        FILE *f = make_file("50%");
+        int n = 0;
+        int r = fscanf(f, "%d%%", &n);
+        assert(r == 1);
+        assert(n == 50);
+        fclose(f);
+    }
+
+    printf("All positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /*
+     * 违反约束 [1]：fscanf 的第一个参数必须是 FILE*。
+     * 传入 int 应编译报错（参数类型不兼容）。
+     * 期望：gcc -std=c99 报 "incompatible type for argument 1" 类错误。
+     */
+    {
+        int not_a_file = 0;
+        int n;
+        fscanf(not_a_file, "%d", &n);
+    }
+
+    /*
+     * 违反约束 [1]：fscanf 的第二个参数必须是 const char*。
+     * 传入 int 应编译报错。
+     * 期望：gcc -std=c99 报 "incompatible type for argument 2" 类错误。
+     */
+    {
+        FILE *f = tmpfile();
+        int n;
+        fscanf(f, 123, &n);
+    }
+
+    /*
+     * 违反约束 [1]：fscanf 至少需要 2 个参数（stream 和 format）。
+     * 只传 1 个参数应编译报错。
+     * 期望：gcc -std=c99 报 "too few arguments to function 'fscanf'"。
+     */
+    {
+        FILE *f = tmpfile();
+        fscanf(f);
+    }
+
+    /*
+     * 违反约束 [1]：fscanf 至少需要 2 个参数。
+     * 传 0 个参数应编译报错。
+     * 期望：gcc -std=c99 报 "too few arguments to function 'fscanf'"。
+     */
+    {
+        fscanf();
+    }
+
+#endif
+
+    return 0;
+}

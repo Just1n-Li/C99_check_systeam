@@ -1,0 +1,235 @@
+/*
+ * 测试条款：C99 7.24.6.3 Restartable multibyte/wide character conversion functions
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应被编译器拒绝（编译报错），
+ *             统一放在 #if 0 ... #endif 中，保证本文件仍可正常编译。
+ *
+ * 覆盖段落：
+ *   [1] 额外参数 ps（指向 mbstate_t 的指针），描述转换状态；
+ *       ps 为 NULL 时使用内部 mbstate_t 对象，程序启动时初始化为初始转换状态；
+ *       实现行为如同没有库函数以 NULL 作为 ps 调用这些函数。
+ *   [2] 返回值不表示编码是否依赖状态（与 7.20.7 的对应函数不同）。
+ *
+ * 涉及函数：mbrlen, mbrtowc, wcrtomb（7.24.6.3 的三个可重启转换函数）。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] mbstate_t 类型可用，且可被零初始化（初始转换状态） */
+static void test_mbstate_type(void)
+{
+    mbstate_t st;                 /* [1] 类型存在 */
+    memset(&st, 0, sizeof st);    /* [1] 初始转换状态 */
+    assert(sizeof(mbstate_t) > 0);
+}
+
+/* [1] mbrlen：带 ps 参数，返回转换的字节数 */
+static void test_mbrlen_with_ps(void)
+{
+    mbstate_t st;
+    const char *s = "A";
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = mbrlen(s, strlen(s), &st);
+    /* 单字节字符 'A' 在 C locale 下应转换为 1 字节 */
+    assert(r == 1);
+}
+
+/* [1] mbrlen：ps 为 NULL 时使用内部 mbstate_t 对象 */
+static void test_mbrlen_null_ps(void)
+{
+    const char *s = "A";
+    size_t r;
+
+    r = mbrlen(s, strlen(s), NULL);   /* [1] ps == NULL */
+    assert(r == 1);
+}
+
+/* [1] mbrtowc：带 ps 参数，把多字节字符转换为宽字符 */
+static void test_mbrtowc_with_ps(void)
+{
+    mbstate_t st;
+    const char *s = "A";
+    wchar_t wc = 0;
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = mbrtowc(&wc, s, strlen(s), &st);
+    assert(r == 1);
+    assert(wc == L'A');
+}
+
+/* [1] mbrtowc：ps 为 NULL 时使用内部 mbstate_t 对象 */
+static void test_mbrtowc_null_ps(void)
+{
+    const char *s = "A";
+    wchar_t wc = 0;
+    size_t r;
+
+    r = mbrtowc(&wc, s, strlen(s), NULL);   /* [1] ps == NULL */
+    assert(r == 1);
+    assert(wc == L'A');
+}
+
+/* [1] wcrtomb：带 ps 参数，把宽字符转换为多字节字符 */
+static void test_wcrtomb_with_ps(void)
+{
+    mbstate_t st;
+    char buf[MB_CUR_MAX + 1];
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = wcrtomb(buf, L'A', &st);
+    assert(r == 1);
+    assert(buf[0] == 'A');
+}
+
+/* [1] wcrtomb：ps 为 NULL 时使用内部 mbstate_t 对象 */
+static void test_wcrtomb_null_ps(void)
+{
+    char buf[MB_CUR_MAX + 1];
+    size_t r;
+
+    r = wcrtomb(buf, L'A', NULL);   /* [1] ps == NULL */
+    assert(r == 1);
+    assert(buf[0] == 'A');
+}
+
+/* [1] 状态可被 ps 携带：连续调用同一 ps 完成多字符转换 */
+static void test_state_carried_by_ps(void)
+{
+    mbstate_t st;
+    const char *s = "AB";
+    wchar_t wc = 0;
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = mbrtowc(&wc, s, 1, &st);
+    assert(r == 1);
+    assert(wc == L'A');
+
+    /* 继续用同一个 ps 转换下一个字符 */
+    r = mbrtowc(&wc, s + 1, 1, &st);
+    assert(r == 1);
+    assert(wc == L'B');
+}
+
+/* [2] 返回值不表示编码是否依赖状态：
+ *     在 C locale 下，mbrlen 对普通字符返回字节数（1），
+ *     而不是用返回值区分“状态相关/无关”。这里只验证返回值语义为字节数。 */
+static void test_return_value_is_byte_count(void)
+{
+    mbstate_t st;
+    const char *s = "A";
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = mbrlen(s, strlen(s), &st);
+    /* [2] 返回值是转换的字节数，而非“是否状态相关”的标志 */
+    assert(r == 1);
+}
+
+/* [1] 空字符转换：mbrtowc 对 '\0' 返回 0 */
+static void test_mbrtowc_null_char(void)
+{
+    mbstate_t st;
+    wchar_t wc = 0;
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = mbrtowc(&wc, "", 1, &st);
+    assert(r == 0);          /* [1] 转换了空字符 */
+    assert(wc == L'\0');
+}
+
+/* [1] wcrtomb 对 L'\0' 返回写入的字节数（含空字符） */
+static void test_wcrtomb_null_char(void)
+{
+    mbstate_t st;
+    char buf[MB_CUR_MAX + 1];
+    size_t r;
+
+    memset(&st, 0, sizeof st);
+    r = wcrtomb(buf, L'\0', &st);
+    assert(r == 1);          /* [1] 写入空字符 */
+    assert(buf[0] == '\0');
+}
+
+int main(void)
+{
+    /* 使用 C locale，保证单字节字符行为可预测 */
+    setlocale(LC_ALL, "C");
+
+    test_mbstate_type();
+    test_mbrlen_with_ps();
+    test_mbrlen_null_ps();
+    test_mbrtowc_with_ps();
+    test_mbrtowc_null_ps();
+    test_wcrtomb_with_ps();
+    test_wcrtomb_null_ps();
+    test_state_carried_by_ps();
+    test_return_value_is_byte_count();
+    test_mbrtowc_null_char();
+    test_wcrtomb_null_char();
+
+    printf("C99 7.24.6.3 positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「ps 参数类型为指向 mbstate_t 的指针」：
+ * 传入 int* 而非 mbstate_t*，gcc -std=c99 应报错
+ * （incompatible pointer type / passing argument 3 of 'mbrlen'）。 */
+{
+    int x = 0;
+    mbrlen("A", 1, &x);          /* 错误：&x 不是 mbstate_t* */
+}
+
+/* 违反约束「ps 参数类型为指向 mbstate_t 的指针」：
+ * 传入 int 而非指针，gcc -std=c99 应报错。 */
+{
+    mbrlen("A", 1, 0);           /* 0 可作空指针常量，但下面用非零整数 */
+    mbrlen("A", 1, 5);           /* 错误：5 不是指针 */
+}
+
+/* 违反约束「mbrtowc 第一个参数为 wchar_t*」：
+ * 传入 char*，gcc -std=c99 应报错。 */
+{
+    char c;
+    mbrtowc(&c, "A", 1, NULL);   /* 错误：&c 不是 wchar_t* */
+}
+
+/* 违反约束「wcrtomb 第一个参数为 char*」：
+ * 传入 wchar_t*，gcc -std=c99 应报错。 */
+{
+    wchar_t w;
+    wcrtomb(&w, L'A', NULL);     /* 错误：&w 不是 char* */
+}
+
+/* 违反约束「mbrlen 第二个参数为 size_t」：
+ * 传入指针，gcc -std=c99 应报错。 */
+{
+    const char *p = "A";
+    mbrlen("A", p, NULL);        /* 错误：p 不是 size_t */
+}
+
+/* 违反约束「wcrtomb 第二个参数为 wchar_t」：
+ * 传入字符串指针，gcc -std=c99 应报错。 */
+{
+    char buf[8];
+    wcrtomb(buf, "A", NULL);     /* 错误："A" 不是 wchar_t */
+}
+
+#endif /* 负向测试结束 */

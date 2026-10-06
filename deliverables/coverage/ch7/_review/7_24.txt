@@ -1,0 +1,503 @@
+=== ARTICLE 7.24 ===
+--- TEXT ---
+Extended multibyte and wide character utilities <wchar.h>
+--- CODE ---
+/*
+ * C99 7.24 —— Extended multibyte and wide character utilities <wchar.h>
+ *
+ * 预期行为：
+ *   正向测试：包含 <wchar.h>，使用该头文件声明的类型、宏与函数，
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反 7.24 相关约束的代码片段应导致编译报错，
+ *             统一放在 #if 0 ... #endif 中，不影响本文件正常编译。
+ *
+ * 说明：7.24 是一个“头文件条款”，其内容由 7.24.1（类型/宏）、
+ *       7.24.2（转换函数）、7.24.3（宽字符 I/O）、7.24.4（宽字符串工具）
+ *       等子条款组成。下面逐段覆盖。
+ */
+
+#include <wchar.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [7.24.1] 类型与宏：wchar_t, wint_t, mbstate_t, size_t, WEOF, NULL */
+static void test_7_24_1_types_and_macros(void)
+{
+    wchar_t wc = L'A';          /* 宽字符类型 */
+    wint_t  wi = WEOF;          /* 宽整型，可容纳 WEOF */
+    mbstate_t st;               /* 多字节转换状态 */
+    size_t  n  = 0;
+
+    assert(wc == L'A');
+    assert(wi == WEOF);
+    assert(WEOF != (wint_t)L'A');
+
+    /* mbstate_t 是完整对象类型，可清零表示初始转换状态 */
+    memset(&st, 0, sizeof st);
+    assert(sizeof st > 0);
+
+    n = wcslen(L"abc");
+    assert(n == 3);
+}
+
+/* [7.24.2.1] mbrtowc / [7.24.2.2] wcrtomb：多字节 <-> 宽字符转换 */
+static void test_7_24_2_1_mbrtowc(void)
+{
+    mbstate_t st;
+    wchar_t   wc = 0;
+    size_t    r;
+
+    memset(&st, 0, sizeof st);
+    /* 在 "C" 语言环境下，单字节字符与宽字符一一对应 */
+    r = mbrtowc(&wc, "A", 1, &st);
+    assert(r == 1);
+    assert(wc == L'A');
+
+    /* 空字符：返回 0，且 wc 被置为 L'\0' */
+    memset(&st, 0, sizeof st);
+    r = mbrtowc(&wc, "", 1, &st);
+    assert(r == 0);
+    assert(wc == L'\0');
+}
+
+static void test_7_24_2_2_wcrtomb(void)
+{
+    mbstate_t st;
+    char      buf[MB_CUR_MAX > 0 ? MB_CUR_MAX : 8];
+    size_t    r;
+
+    memset(&st, 0, sizeof st);
+    r = wcrtomb(buf, L'A', &st);
+    assert(r == 1);
+    assert(buf[0] == 'A');
+
+    /* 转换 L'\0' 时写入空字符并返回 1 */
+    memset(&st, 0, sizeof st);
+    r = wcrtomb(buf, L'\0', &st);
+    assert(r == 1);
+    assert(buf[0] == '\0');
+}
+
+/* [7.24.2.3] mbsinit：判断是否处于初始转换状态 */
+static void test_7_24_2_3_mbsinit(void)
+{
+    mbstate_t st;
+    memset(&st, 0, sizeof st);
+    assert(mbsinit(&st) != 0);   /* 全零状态是初始状态 */
+}
+
+/* [7.24.2.4] mbsrtowcs / [7.24.2.5] wcsrtombs：带状态的整串转换 */
+static void test_7_24_2_4_mbsrtowcs(void)
+{
+    mbstate_t st;
+    const char *src = "Hi";
+    wchar_t    dst[8];
+    size_t     r;
+
+    memset(&st, 0, sizeof st);
+    r = mbsrtowcs(dst, &src, 8, &st);
+    assert(r == 2);
+    assert(dst[0] == L'H' && dst[1] == L'i' && dst[2] == L'\0');
+    assert(src == NULL);   /* 转换到终止空字符后，src 被置为 NULL */
+}
+
+static void test_7_24_2_5_wcsrtombs(void)
+{
+    mbstate_t st;
+    const wchar_t *src = L"Hi";
+    char           dst[8];
+    size_t         r;
+
+    memset(&st, 0, sizeof st);
+    r = wcsrtombs(dst, &src, 8, &st);
+    assert(r == 2);
+    assert(strcmp(dst, "Hi") == 0);
+    assert(src == NULL);
+}
+
+/* [7.24.3.1] fgetwc / [7.24.3.2] fgetws / [7.24.3.3] fputwc / [7.24.3.4] fputws */
+static void test_7_24_3_wide_io(void)
+{
+    FILE *fp;
+    wchar_t wbuf[16];
+    wint_t  wi;
+
+    fp = tmpfile();
+    assert(fp != NULL);
+
+    /* fputwc：写宽字符 */
+    wi = fputwc(L'X', fp);
+    assert(wi == (wint_t)L'X');
+
+    /* fputws：写宽字符串 */
+    assert(fputws(L"YZ", fp) >= 0);
+
+    rewind(fp);
+
+    /* fgetwc：读宽字符 */
+    wi = fgetwc(fp);
+    assert(wi == (wint_t)L'X');
+
+    /* fgetws：读宽字符串 */
+    assert(fgetws(wbuf, 16, fp) != NULL);
+    assert(wcscmp(wbuf, L"YZ") == 0);
+
+    /* 读到文件尾返回 WEOF */
+    wi = fgetwc(fp);
+    assert(wi == WEOF);
+
+    fclose(fp);
+}
+
+/* [7.24.3.5] getwc / [7.24.3.6] getwchar / [7.24.3.7] putwc / [7.24.3.8] putwchar */
+static void test_7_24_3_getwc_putwc(void)
+{
+    FILE *fp;
+    wint_t wi;
+
+    fp = tmpfile();
+    assert(fp != NULL);
+
+    wi = putwc(L'Q', fp);       /* 等价于 fputwc */
+    assert(wi == (wint_t)L'Q');
+
+    rewind(fp);
+    wi = getwc(fp);             /* 等价于 fgetwc */
+    assert(wi == (wint_t)L'Q');
+
+    fclose(fp);
+
+    /* getwchar/putwchar 作用于 stdin/stdout，这里只验证其可调用性 */
+    (void)&getwchar;
+    (void)&putwchar;
+}
+
+/* [7.24.3.9] ungetwc：回退一个宽字符 */
+static void test_7_24_3_9_ungetwc(void)
+{
+    FILE *fp;
+    wint_t wi;
+
+    fp = tmpfile();
+    assert(fp != NULL);
+
+    fputwc(L'R', fp);
+    rewind(fp);
+
+    wi = fgetwc(fp);
+    assert(wi == (wint_t)L'R');
+
+    wi = ungetwc((wint_t)L'R', fp);
+    assert(wi == (wint_t)L'R');
+
+    wi = fgetwc(fp);
+    assert(wi == (wint_t)L'R');
+
+    fclose(fp);
+}
+
+/* [7.24.4.1] wcstod / [7.24.4.1.1] wcstof / [7.24.4.1.2] wcstold */
+static void test_7_24_4_1_wcstod(void)
+{
+    wchar_t *end;
+    double   d;
+    float    f;
+    long double ld;
+
+    d = wcstod(L"3.5abc", &end);
+    assert(d == 3.5);
+    assert(*end == L'a');
+
+    f = wcstof(L"1.25", NULL);
+    assert(f == 1.25f);
+
+    ld = wcstold(L"2.5", NULL);
+    assert(ld == 2.5L);
+}
+
+/* [7.24.4.1.1] wcstol / wcstoll / wcstoul / wcstoull */
+static void test_7_24_4_1_1_wcstol(void)
+{
+    wchar_t *end;
+    long      l;
+    long long ll;
+    unsigned long ul;
+    unsigned long long ull;
+
+    l = wcstol(L"123", &end, 10);
+    assert(l == 123 && *end == L'\0');
+
+    ll = wcstoll(L"-456", NULL, 10);
+    assert(ll == -456LL);
+
+    ul = wcstoul(L"ff", NULL, 16);
+    assert(ul == 255UL);
+
+    ull = wcstoull(L"100", NULL, 10);
+    assert(ull == 100ULL);
+}
+
+/* [7.24.4.2] wcscpy / [7.24.4.2.1] wcsncpy */
+static void test_7_24_4_2_wcscpy(void)
+{
+    wchar_t dst[16];
+
+    assert(wcscpy(dst, L"hello") == dst);
+    assert(wcscmp(dst, L"hello") == 0);
+
+    wmemset(dst, L'#', 16);
+    assert(wcsncpy(dst, L"ab", 16) == dst);
+    assert(dst[0] == L'a' && dst[1] == L'b' && dst[2] == L'\0');
+}
+
+/* [7.24.4.2.2] wmemcpy / [7.24.4.2.3] wmemmove */
+static void test_7_24_4_2_2_wmemcpy(void)
+{
+    wchar_t a[8] = L"abcdef";
+    wchar_t b[8];
+
+    assert(wmemcpy(b, a, 7) == b);
+    assert(wcscmp(b, L"abcdef") == 0);
+
+    /* wmemmove 允许重叠 */
+    assert(wmemmove(a + 1, a, 5) == a + 1);
+    assert(a[1] == L'a' && a[2] == L'b');
+}
+
+/* [7.24.4.3] wcscat / [7.24.4.3.1] wcsncat */
+static void test_7_24_4_3_wcscat(void)
+{
+    wchar_t dst[16];
+
+    wcscpy(dst, L"foo");
+    assert(wcscat(dst, L"bar") == dst);
+    assert(wcscmp(dst, L"foobar") == 0);
+
+    wcscpy(dst, L"foo");
+    assert(wcsncat(dst, L"barbaz", 3) == dst);
+    assert(wcscmp(dst, L"foobar") == 0);
+}
+
+/* [7.24.4.4] wcscmp / [7.24.4.4.1] wcsncmp / [7.24.4.4.2] wmemcmp */
+static void test_7_24_4_4_wcscmp(void)
+{
+    assert(wcscmp(L"abc", L"abc") == 0);
+    assert(wcscmp(L"abc", L"abd") < 0);
+    assert(wcscmp(L"abd", L"abc") > 0);
+
+    assert(wcsncmp(L"abcXX", L"abcYY", 3) == 0);
+    assert(wcsncmp(L"abc", L"abd", 3) < 0);
+
+    assert(wmemcmp(L"abc", L"abc", 3) == 0);
+    assert(wmemcmp(L"abc", L"abd", 3) < 0);
+}
+
+/* [7.24.4.5] wcscoll / [7.24.4.5.1] wcsxfrm */
+static void test_7_24_4_5_wcscoll(void)
+{
+    wchar_t dst[32];
+
+    /* 在 "C" 环境下，wcscoll 与 wcscmp 结果一致 */
+    assert(wcscoll(L"abc", L"abc") == 0);
+    assert(wcscoll(L"abc", L"abd") < 0);
+
+    assert(wcsxfrm(dst, L"abc", 32) == 3);
+    assert(wcscmp(dst, L"abc") == 0);
+}
+
+/* [7.24.4.6] wcslen */
+static void test_7_24_4_6_wcslen(void)
+{
+    assert(wcslen(L"") == 0);
+    assert(wcslen(L"hello") == 5);
+}
+
+/* [7.24.4.7] wcschr / [7.24.4.7.1] wcscspn / [7.24.4.7.2] wcspbrk
+ * [7.24.4.7.3] wcsrchr / [7.24.4.7.4] wcsspn / [7.24.4.7.5] wcsstr
+ * [7.24.4.7.6] wcstok */
+static void test_7_24_4_7_search(void)
+{
+    const wchar_t *s = L"hello world";
+    wchar_t       *p;
+    wchar_t        buf[32];
+    wchar_t       *save;
+
+    assert(wcschr(s, L'w') == s + 6);
+    assert(wcschr(s, L'z') == NULL);
+
+    assert(wcsrchr(s, L'o') == s + 7);
+    assert(wcsrchr(s, L'z') == NULL);
+
+    assert(wcscspn(s, L"xyz") == 11);   /* 无匹配则返回整个长度 */
+    assert(wcsspn(s, L"hel") == 4);
+
+    assert(wcspbrk(s, L"ow") == s + 4);
+    assert(wcspbrk(s, L"xyz") == NULL);
+
+    assert(wcsstr(s, L"world") == s + 6);
+    assert(wcsstr(s, L"xyz") == NULL);
+
+    wcscpy(buf, L"a,b,c");
+    save = NULL;
+    p = wcstok(buf, L",", &save);
+    assert(p != NULL && wcscmp(p, L"a") == 0);
+    p = wcstok(NULL, L",", &save);
+    assert(p != NULL && wcscmp(p, L"b") == 0);
+    p = wcstok(NULL, L",", &save);
+    assert(p != NULL && wcscmp(p, L"c") == 0);
+    p = wcstok(NULL, L",", &save);
+    assert(p == NULL);
+}
+
+/* [7.24.4.8] wmemchr / [7.24.4.8.1] wmemcmp / [7.24.4.8.2] wmemcpy
+ * [7.24.4.8.3] wmemmove / [7.24.4.8.4] wmemset */
+static void test_7_24_4_8_wmem(void)
+{
+    wchar_t a[8] = L"abcdef";
+    wchar_t b[8];
+
+    assert(wmemchr(a, L'c', 6) == a + 2);
+    assert(wmemchr(a, L'z', 6) == NULL);
+
+    assert(wmemcmp(a, a, 6) == 0);
+
+    assert(wmemcpy(b, a, 6) == b);
+    assert(wmemcmp(b, a, 6) == 0);
+
+    assert(wmemmove(a + 1, a, 4) == a + 1);
+
+    assert(wmemset(b, L'*', 4) == b);
+    assert(b[0] == L'*' && b[3] == L'*');
+}
+
+/* [7.24.4.9] wcsftime：按格式输出宽字符串时间 */
+static void test_7_24_4_9_wcsftime(void)
+{
+    wchar_t      buf[64];
+    struct tm    tmv;
+    size_t       r;
+
+    memset(&tmv, 0, sizeof tmv);
+    tmv.tm_year = 100;   /* 2000 年 */
+    tmv.tm_mon  = 0;     /* 一月 */
+    tmv.tm_mday = 1;
+    tmv.tm_hour = 0;
+    tmv.tm_min  = 0;
+    tmv.tm_sec  = 0;
+
+    r = wcsftime(buf, 64, L"%Y-%m-%d", &tmv);
+    assert(r > 0);
+    assert(wcscmp(buf, L"2000-01-01") == 0);
+}
+
+int main(void)
+{
+    /* 使用 "C" 语言环境，保证多字节/宽字符转换行为可预测 */
+    setlocale(LC_ALL, "C");
+
+    test_7_24_1_types_and_macros();
+    test_7_24_2_1_mbrtowc();
+    test_7_24_2_2_wcrtomb();
+    test_7_24_2_3_mbsinit();
+    test_7_24_2_4_mbsrtowcs();
+    test_7_24_2_5_wcsrtombs();
+    test_7_24_3_wide_io();
+    test_7_24_3_getwc_putwc();
+    test_7_24_3_9_ungetwc();
+    test_7_24_4_1_wcstod();
+    test_7_24_4_1_1_wcstol();
+    test_7_24_4_2_wcscpy();
+    test_7_24_4_2_2_wmemcpy();
+    test_7_24_4_3_wcscat();
+    test_7_24_4_4_wcscmp();
+    test_7_24_4_5_wcscoll();
+    test_7_24_4_6_wcslen();
+    test_7_24_4_7_search();
+    test_7_24_4_8_wmem();
+    test_7_24_4_9_wcsftime();
+
+    printf("C99 7.24 <wchar.h> positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wchar_t 是完整对象类型，不能对其取成员」：
+ * wchar_t 是算术类型，不是结构体/联合体，使用 . 运算符应报错。 */
+void neg_wchar_member(void)
+{
+    wchar_t wc = L'A';
+    (void)wc.x;              /* error: request for member 'x' in something not a structure or union */
+}
+
+/* 违反约束「mbstate_t 是完整对象类型，不能对其取成员」：
+ * mbstate_t 是（可能为结构体的）完整类型，但标准未定义任何成员，
+ * 直接访问未声明的成员应报错。 */
+void neg_mbstate_member(void)
+{
+    mbstate_t st;
+    (void)st.__count;        /* error: no member named '__count' in 'mbstate_t' */
+}
+
+/* 违反约束「wcslen 的参数必须是指向宽字符的指针」：
+ * 传入整数常量，类型不匹配，应报错。 */
+void neg_wcslen_arg(void)
+{
+    size_t n = wcslen(42);   /* error: incompatible integer to pointer conversion */
+    (void)n;
+}
+
+/* 违反约束「wcscpy 的目标必须是可修改的宽字符数组/指针」：
+ * 目标为字符串字面量（const 限定），赋值应报错。 */
+void neg_wcscpy_const_target(void)
+{
+    wcscpy(L"abc", L"xyz");  /* error: passing 'const wchar_t *' to parameter of type 'wchar_t *' */
+}
+
+/* 违反约束「wcscmp 的两个参数都必须是指向宽字符的指针」：
+ * 传入 double，类型不匹配，应报错。 */
+void neg_wcscmp_arg(void)
+{
+    int r = wcscmp(1.0, L"x");  /* error: incompatible type for argument 1 of 'wcscmp' */
+    (void)r;
+}
+
+/* 违反约束「wmemcpy 的第三个参数类型为 size_t」：
+ * 传入指针，类型不匹配，应报错。 */
+void neg_wmemcpy_arg(void)
+{
+    wchar_t a[4], b[4];
+    wmemcpy(a, b, (wchar_t *)0);  /* error: incompatible type for argument 3 of 'wmemcpy' */
+}
+
+/* 违反约束「wcsftime 的第一个参数必须是可写的宽字符数组」：
+ * 传入字符串字面量，应报错。 */
+void neg_wcsftime_const(void)
+{
+    struct tm tmv;
+    wcsftime(L"", 1, L"%Y", &tmv);  /* error: passing 'const wchar_t *' ... */
+}
+
+/* 违反约束「WEOF 是 wint_t 类型的宏，不能作为左值赋值」：
+ * 宏展开为常量表达式，赋值应报错。 */
+void neg_weof_assign(void)
+{
+    WEOF = 0;                /* error: lvalue required as left operand of assignment */
+}
+
+/* 违反约束「wchar_t 是算术类型，不能对其取地址后当作结构体解引用」：
+ * 通过指针访问不存在的成员，应报错。 */
+void neg_wchar_ptr_member(void)
+{
+    wchar_t wc = L'A';
+    wchar_t *p = &wc;
+    (void)p->x;              /* error: 'wchar_t' has no member named 'x' */
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,32 @@
+# requirements.txt - project dependencies
+# Install: pip install -r requirements.txt
+
+# Web framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.1
+pydantic-settings>=2.3.0
+
+# Database drivers (会话历史 ai_history；Neo4j 可选遗留)
+neo4j>=5.20.0
+aiomysql>=0.2.0
+cryptography
+
+# LLM SDK
+openai>=1.12.0
+
+# LangChain
+langchain>=0.2.5
+langchain-community>=0.2.5
+langchain-core>=0.2.0
+langchain-openai>=0.1.0
+
+# RAG: FAISS + embeddings
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+# 可选：安装后自动优先使用（Windows 长路径可能导致 torch 安装失败，此时自动回退 hashing 向量）
+# sentence-transformers>=2.2.2
+
+# Utilities
+python-dotenv>=1.0.1
+requests>=2.31.0

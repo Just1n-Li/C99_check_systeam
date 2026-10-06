@@ -1,0 +1,131 @@
+=== ARTICLE ===
+6.6
+=== TEXT ===
+Constant expressions
+Syntax:
+[1] constant-expression: conditional-expression
+Description:
+[2] A constant expression can be evaluated during translation rather than runtime, and accordingly may be used in any place that a constant may be.
+Constraints:
+[3] Constant expressions shall not contain assignment, increment, decrement, function-call, or comma operators, except when they are contained within a subexpression that is not evaluated.
+[4] Each constant expression shall evaluate to a constant that is in the range of representable values for its type.
+Semantics:
+[5] An expression that evaluates to a constant is required in several contexts. If a floating expression is evaluated in the translation environment, the arithmetic precision and range shall be at least as great as if the expression were being evaluated in the execution environment.
+[6] An integer constant expression shall have integer type and shall only have operands that are integer constants, enumeration constants, character constants, sizeof expressions whose results are integer constants, and floating constants that are the immediate operands of casts. Cast operators in an integer constant expression shall only convert arithmetic types to integer types, except as part of an operand to the sizeof operator.
+[7] More latitude is permitted for constant expressions in initializers. Such a constant expression shall be, or evaluate to, one of the following: an arithmetic constant expression, a null pointer constant, an address constant, or an address constant for an object type plus or minus an integer constant expression.
+[8] An arithmetic constant expression shall have arithmetic type and shall only have operands that are integer constants, floating constants, enumeration constants, character constants, and sizeof expressions. Cast operators in an arithmetic constant expression shall only convert arithmetic types to arithmetic types, except as part of an operand to a sizeof operator whose result is an integer constant.
+[9] An address constant is a null pointer, a pointer to an lvalue designating an object of static storage duration, or a pointer to a function designator; it shall be created explicitly using the unary & operator or an integer constant cast to pointer type, or implicitly by the use of an expression of array or function type. The array-subscript [] and member-access . and -> operators, the address & and indirection * unary operators, and pointer casts may be used in the creation of an address constant, but the value of an object shall not be accessed by use of these operators.
+[10] An implementation may accept other forms of constant expressions.
+[11] The semantic rules for the evaluation of a constant expression are the same as for nonconstant expressions.
+Forward references: array declarators (6.7.5.2), initialization (6.7.8).
+Footnotes:
+98) The operand of a sizeof operator is usually not evaluated (6.5.3.4).
+99) An integer constant expression is used to specify the size of a bit-field member of a structure, the value of an enumeration constant, the size of an array, or the value of a case constant. Further constraints that apply to the integer constant expressions used in conditional-inclusion preprocessing directives are discussed in 6.10.1.
+100) Thus, in the following initialization, static int i = 2 || 1 / 0; the expression is a valid integer constant expression with value one.
+=== CODE ===
+/*
+ * 验证 C99 条款 6.6 Constant expressions
+ * 预期行为：正向测试代码应能编译并运行通过（assert 不触发）；
+ *           负向测试代码违反 C99 约束，应编译报错（此处用 #if 0 屏蔽以保证整体编译通过）。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 语法：constant-expression 为 conditional-expression */
+int arr_cond[1 ? 2 : 3];
+
+/* [2] 描述：常量表达式可在翻译期间求值，用于任何可以使用常量的地方 */
+int arr_desc[2 + 3];
+
+/* [5] 语义：浮点表达式在翻译环境求值，精度和范围应至少与执行环境一样大 */
+static double d = 1.0 / 3.0;
+
+/* [6] 语义：整数常量表达式(ICE)的合法操作数 */
+enum E { E_VAL = 5 };
+int ice_int[10];                         /* 整数常量 */
+int ice_enum[E_VAL];                     /* 枚举常量 */
+int ice_char['a'];                       /* 字符常量 */
+int ice_sizeof[sizeof(int)];             /* sizeof 表达式 */
+int ice_float_cast[(int)2.0];            /* 浮点常量作为强制转换的直接操作数 */
+int ice_cast_arith[(int)(short)1];       /* 强制转换算术类型为整数类型 */
+
+/* [7] 语义：初始化器中的常量表达式允许更大自由度 */
+int g = 1 + 2.0;                         /* 算术常量表达式 */
+int *null_ptr = 0;                       /* 空指针常量 */
+static int x_obj;
+int *addr_ptr = &x_obj;                  /* 地址常量 */
+int *addr_plus_int = &x_obj + 1;          /* 地址常量 + 整数常量表达式 */
+
+/* [8] 语义：算术常量表达式的合法操作数与强制转换 */
+double d2 = 1.5;                         /* 浮点常量 */
+double d3 = (double)(int)1;              /* 强制转换算术类型为算术类型 */
+double d4 = (double)sizeof(int);         /* sizeof 结果作为算术常量表达式的操作数 */
+
+int main(void) {
+    /* [1] 语法验证 */
+    assert(sizeof(arr_cond) / sizeof(arr_cond[0]) == 2);
+
+    /* [2] 描述验证 */
+    assert(sizeof(arr_desc) / sizeof(arr_desc[0]) == 5);
+
+    /* [5] 语义验证：翻译期与执行期结果一致 */
+    assert(d == 1.0 / 3.0);
+
+    /* [6] 语义验证 */
+    assert(sizeof(ice_int) / sizeof(ice_int[0]) == 10);
+    assert(sizeof(ice_enum) / sizeof(ice_enum[0]) == E_VAL);
+    assert(sizeof(ice_char) / sizeof(ice_char[0]) == 'a');
+    assert(sizeof(ice_sizeof) / sizeof(ice_sizeof[0]) == sizeof(int));
+    assert(sizeof(ice_float_cast) / sizeof(ice_float_cast[0]) == 2);
+    assert(sizeof(ice_cast_arith) / sizeof(ice_cast_arith[0]) == 1);
+
+    /* [7] 语义验证 */
+    assert(g == 3);
+    assert(null_ptr == 0);
+    assert(addr_ptr == &x_obj);
+    assert(addr_plus_int == &x_obj + 1);
+
+    /* [8] 语义验证 */
+    assert(d2 == 1.5);
+    assert(d3 == 1.0);
+    assert(d4 == (double)sizeof(int));
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+
+#if 0
+
+/* [3] 违反约束「不得包含逗号运算符」：gcc -std=c99 应报错 */
+int arr_comma[1 ? 1 : (2, 3)];
+
+/* [3] 违反约束「不得包含赋值运算符」：gcc -std=c99 应报错 */
+int x_assign;
+int arr_assign[1 ? 1 : (x_assign = 1)];
+
+/* [3] 违反约束「不得包含自增运算符」：gcc -std=c99 应报错 */
+int x_inc;
+int arr_inc[1 ? 1 : (x_inc++)];
+
+/* [3] 违反约束「不得包含函数调用」：gcc -std=c99 应报错 */
+int f(void);
+int arr_call[1 ? 1 : (f())];
+
+/* [4] 违反约束「必须在其类型可表示范围内」：1000000 * 1000000 溢出 32 位 int，gcc -std=c99 应报错 */
+enum { E_OVERFLOW = 1000000 * 1000000 };
+
+/* [6] 违反约束「浮点常量必须是强制转换的直接操作数」：1.5 + 2.5 不是直接操作数，gcc -std=c99 应报错 */
+int arr_f[ (int)(1.5 + 2.5) ];
+
+/* [6] 违反约束「强制转换只能将算术类型转换为整数类型」：&x_obj 是指针(非算术类型)，gcc -std=c99 应报错 */
+int arr_ptr[ (int)&x_obj ];
+
+/* [8] 违反约束「强制转换只能将算术类型转换为算术类型」：&x_obj 是指针(非算术类型)，gcc -std=c99 应报错 */
+double d_ptr = (double)&x_obj;
+
+#endif

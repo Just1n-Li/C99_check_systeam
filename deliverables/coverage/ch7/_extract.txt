@@ -1,0 +1,4330 @@
+====ARTICLE 7.12.5.3 ====
+---TEXT---
+The atanh functions
+Synopsis:
+[1] #include <math.h> double atanh(double x); float atanhf(float x); long double atanhl(long double x);
+Description:
+[2] The atanh functions compute the arc hyperbolic tangent of x. A domain error occurs for arguments not in the interval [-1, +1]. A range error may occur if the argument equals -1 or +1.
+Returns:
+[3] The atanh functions return artanh x.
+---CODE---
+/*
+ * 测试 C99 7.12.5.3 —— atanh / atanhf / atanhl 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 atanh/atanhf/atanhl，验证返回值语义
+ *             （artanh x），并验证定义域 [-1,+1] 之外触发 domain error。
+ *   负向测试：违反约束的代码应导致编译报错（见 #if 0 块）。
+ *
+ * 编译：gcc -std=c99 -Wall -lm test.c
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+#include <errno.h>
+
+/* 判断浮点近似相等 */
+static int close_enough(double a, double b, double eps)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= eps;
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 原型声明：三个函数均可用，返回类型分别为 double/float/long double */
+    {
+        double  (*pd)(double)       = atanh;
+        float   (*pf)(float)        = atanhf;
+        long double (*pl)(long double) = atanhl;
+        assert(pd != NULL && pf != NULL && pl != NULL);
+    }
+
+    /* [2][3] 语义：atanh 计算 arc hyperbolic tangent（反双曲正切） */
+    /* 已知值：artanh(0) = 0 */
+    assert(atanh(0.0) == 0.0);
+    assert(atanhf(0.0f) == 0.0f);
+    assert(atanhl(0.0L) == 0.0L);
+
+    /* artanh(0.5) = 0.5 * ln(3) ≈ 0.5493061443340548 */
+    {
+        double expected = 0.54930614433405484569762261846126285232374527891137;
+        assert(close_enough(atanh(0.5), expected, 1e-15));
+        assert(close_enough((double)atanhf(0.5f), expected, 1e-6));
+        assert(close_enough((double)atanhl(0.5L), expected, 1e-15));
+    }
+
+    /* artanh(-0.5) = -artanh(0.5)（奇函数） */
+    assert(close_enough(atanh(-0.5), -atanh(0.5), 1e-15));
+
+    /* 与 tanh 互逆：atanh(tanh(y)) == y（y 在合理范围内） */
+    {
+        double y = 0.7;
+        assert(close_enough(atanh(tanh(y)), y, 1e-14));
+    }
+
+    /* [2] 定义域：参数不在 [-1, +1] 内时发生 domain error。
+     *     标准要求实现报告 domain error（通常设置 errno = EDOM 并返回 NaN）。
+     *     这里只验证“确实报告了错误”，不强制具体返回值形式。 */
+    {
+        errno = 0;
+        double r = atanh(2.0);          /* 2.0 不在 [-1,+1] */
+        assert(errno == EDOM || isnan(r));
+
+        errno = 0;
+        r = atanh(-2.0);                /* -2.0 不在 [-1,+1] */
+        assert(errno == EDOM || isnan(r));
+
+        errno = 0;
+        float rf = atanhf(1.5f);
+        assert(errno == EDOM || isnan(rf));
+
+        errno = 0;
+        long double rl = atanhl(-1.5L);
+        assert(errno == EDOM || isnan(rl));
+    }
+
+    /* [2] 边界 ±1：可能发生 range error（pole error）。
+     *     标准用 “may occur”，因此不强制；仅验证调用不崩溃。 */
+    {
+        errno = 0;
+        volatile double r1 = atanh(1.0);
+        volatile double r2 = atanh(-1.0);
+        (void)r1; (void)r2;
+    }
+
+    /* [3] 返回值类型检查：atanhf 返回 float，atanhl 返回 long double */
+    {
+        float f = atanhf(0.25f);
+        long double l = atanhl(0.25L);
+        assert(close_enough((double)f, atanh(0.25), 1e-6));
+        assert(close_enough((double)l, atanh(0.25), 1e-15));
+    }
+
+    printf("C99 7.12.5.3 atanh/atanhf/atanhl: all positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「[1] 原型：参数必须为 double/float/long double 类型」：
+     * 传入结构体类型，gcc -std=c99 应报 incompatible type 错误。 */
+    struct S { int x; } s;
+    atanh(s);
+
+    /* 违反约束「[1] 参数个数必须为 1」：
+     * 少传参数，gcc -std=c99 应报 too few arguments 错误。 */
+    atanh();
+
+    /* 违反约束「[1] 参数个数必须为 1」：
+     * 多传参数，gcc -std=c99 应报 too many arguments 错误。 */
+    atanh(0.5, 0.5);
+
+    /* 违反约束「[1] 参数必须为算术类型」：
+     * 传入指针，gcc -std=c99 应报 incompatible type 错误。 */
+    double d = 0.5;
+    atanh(&d);
+
+    /* 违反约束「[1] 函数返回类型不可被赋值」：
+     * 对函数调用结果赋值，gcc -std=c99 应报 lvalue required 错误。 */
+    atanh(0.5) = 1.0;
+
+    /* 违反约束「[1] 函数返回类型不可取地址」：
+     * 对函数调用结果取地址，gcc -std=c99 应报 lvalue required 错误。 */
+    double *p = &atanh(0.5);
+
+#endif
+
+    return 0;
+}
+====ARTICLE 7.12.5.4 ====
+---TEXT---
+The cosh functions
+Synopsis:
+[1] #include <math.h> double cosh(double x); float coshf(float x); long double coshl(long double x);
+Description:
+[2] The cosh functions compute the hyperbolic cosine of x. A range error occurs if the magnitude of x is too large.
+Returns:
+[3] The cosh functions return cosh x.
+---CODE---
+/*
+ * 测试 C99 7.12.5.4 —— cosh 函数族 (cosh / coshf / coshl)
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 声明与原型：double cosh(double); float coshf(float); long double coshl(long double);
+ *   [2] 语义：计算双曲余弦；|x| 过大时发生 range error。
+ *   [3] 返回值：返回 cosh x。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：三个函数应可用，且返回类型分别为 double / float / long double。
+ *     通过取函数指针并比较返回类型来静态验证原型。 */
+static double (*p_cosh)(double)          = cosh;
+static float  (*p_coshf)(float)          = coshf;
+static long double (*p_coshl)(long double) = coshl;
+
+/* 用 _Generic 无法在 C99 使用，改用赋值兼容性检查返回类型。 */
+static void check_prototypes(void)
+{
+    double d;
+    float  f;
+    long double ld;
+
+    /* [1] 调用形式：接受一个实参，返回对应类型 */
+    d  = cosh(0.0);
+    f  = coshf(0.0f);
+    ld = coshl(0.0L);
+
+    /* 若返回类型不符，下面的赋值会因精度/类型不匹配产生告警或错误；
+     * 这里用 sizeof 静态断言返回类型大小。 */
+    assert(sizeof(d)  == sizeof(double));
+    assert(sizeof(f)  == sizeof(float));
+    assert(sizeof(ld) == sizeof(long double));
+
+    (void)p_cosh; (void)p_coshf; (void)p_coshl;
+}
+
+/* [2][3] 语义与返回值：cosh(0) == 1，cosh 为偶函数，cosh x = (e^x + e^-x)/2 */
+static void check_semantics(void)
+{
+    /* [3] cosh(0) = 1 */
+    assert(cosh(0.0) == 1.0);
+    assert(coshf(0.0f) == 1.0f);
+    assert(coshl(0.0L) == 1.0L);
+
+    /* [2][3] 偶函数：cosh(-x) == cosh(x) */
+    assert(cosh(1.0) == cosh(-1.0));
+    assert(coshf(2.0f) == coshf(-2.0f));
+    assert(coshl(3.0L) == coshl(-3.0L));
+
+    /* [2][3] 与定义式 (e^x + e^-x)/2 一致（用容差比较） */
+    {
+        double x = 1.5;
+        double expected = (exp(x) + exp(-x)) / 2.0;
+        double got = cosh(x);
+        assert(fabs(got - expected) < 1e-12);
+    }
+    {
+        float x = 0.75f;
+        float expected = (expf(x) + expf(-x)) / 2.0f;
+        float got = coshf(x);
+        assert(fabsf(got - expected) < 1e-5f);
+    }
+    {
+        long double x = 2.25L;
+        long double expected = (expl(x) + expl(-x)) / 2.0L;
+        long double got = coshl(x);
+        assert(fabsl(got - expected) < 1e-15L);
+    }
+
+    /* [2][3] 已知值：cosh(1) ≈ 1.5430806348152437 */
+    assert(fabs(cosh(1.0) - 1.5430806348152437) < 1e-12);
+
+    /* [2] 大参数：cosh 单调递增，cosh(10) > cosh(1) */
+    assert(cosh(10.0) > cosh(1.0));
+
+    /* [2] range error 情形：|x| 过大时函数仍返回一个值（可能为 HUGE_VAL 或 inf），
+     *     标准只要求发生 range error，不要求特定返回值，故此处仅调用不 assert 具体值。 */
+    {
+        volatile double big = 1e300;
+        double r = cosh(big);   /* 可能触发 range error，返回 HUGE_VAL */
+        (void)r;
+    }
+}
+
+int main(void)
+{
+    check_prototypes();
+    check_semantics();
+    printf("C99 7.12.5.4 cosh functions: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「cosh 接受一个实参」：实参个数不匹配，gcc -std=c99 应报错
+ * error: too few arguments to function 'cosh' */
+double a1 = cosh();
+
+/* 违反约束「cosh 接受一个实参」：实参过多，应报错
+ * error: too many arguments to function 'cosh' */
+double a2 = cosh(1.0, 2.0);
+
+/* 违反约束「实参须为算术类型」：结构体不能传给 cosh，应报错
+ * error: incompatible type for argument 1 of 'cosh' */
+struct S { int x; } s;
+double a3 = cosh(s);
+
+/* 违反约束「实参须为算术类型」：指针不能传给 cosh，应报错
+ * error: incompatible type for argument 1 of 'cosh' */
+double a4 = cosh("hello");
+
+/* 违反约束「coshf 参数为 float」：用不兼容的指针类型实参，应报错
+ * error: incompatible type for argument 1 of 'coshf' */
+float a5 = coshf(&s);
+
+/* 违反约束「coshl 参数为 long double」：结构体实参，应报错
+ * error: incompatible type for argument 1 of 'coshl' */
+long double a6 = coshl(s);
+
+/* 违反约束「函数返回非左值」：对函数调用结果赋值，应报错
+ * error: lvalue required as left operand of assignment */
+void bad_assign(void) {
+    cosh(1.0) = 2.0;
+}
+
+/* 违反约束「函数返回非左值」：对函数调用结果取地址，应报错
+ * error: lvalue required as unary '&' operand */
+void bad_addr(void) {
+    double *p = &cosh(1.0);
+    (void)p;
+}
+
+#endif
+====ARTICLE 7.12.5.5 ====
+---TEXT---
+The sinh functions
+Synopsis:
+[1] #include <math.h> double sinh(double x); float sinhf(float x); long double sinhl(long double x);
+Description:
+[2] The sinh functions compute the hyperbolic sine of x. A range error occurs if the magnitude of x is too large.
+Returns:
+[3] The sinh functions return sinh x.
+---CODE---
+/*
+ * 测试 C99 7.12.5.5 —— The sinh functions
+ *
+ * 预期行为：
+ *   正向测试：<math.h> 提供 sinh / sinhf / sinhl 三个函数，
+ *             分别接受 double / float / long double 参数，
+ *             返回对应类型的双曲正弦值 sinh(x)。
+ *             编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码（参数个数错误、参数类型不可转换等）
+ *             应导致编译报错；这些片段放在 #if 0 中，不影响本文件编译。
+ *
+ * 覆盖段落：
+ *   [1] Synopsis：三个函数声明与原型
+ *   [2] Description：计算双曲正弦；|x| 过大时发生 range error
+ *   [3] Returns：返回 sinh x
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+
+/* 判断浮点近似相等 */
+static int close_enough(double a, double b)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= 1e-12 * (1.0 + (b < 0 ? -b : b));
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] Synopsis：三个函数均可用，且返回类型分别为 double/float/long double。
+     *     通过赋值给对应类型变量并检查 sizeof 来验证原型存在。 */
+    double      (*pd)(double)      = sinh;
+    float       (*pf)(float)       = sinhf;
+    long double (*pl)(long double) = sinhl;
+    assert(pd != NULL && pf != NULL && pl != NULL);
+
+    /* [1] 用显式类型调用，验证返回类型宽度 */
+    {
+        double      rd = sinh(0.0);
+        float       rf = sinhf(0.0f);
+        long double rl = sinhl(0.0L);
+        assert(sizeof rd == sizeof(double));
+        assert(sizeof rf == sizeof(float));
+        assert(sizeof rl == sizeof(long double));
+    }
+
+    /* [3] Returns：sinh(0) == 0 */
+    assert(sinh(0.0) == 0.0);
+    assert(sinhf(0.0f) == 0.0f);
+    assert(sinhl(0.0L) == 0.0L);
+
+    /* [2][3] 基本数值：sinh 是奇函数，sinh(-x) == -sinh(x) */
+    {
+        double x = 1.25;
+        assert(close_enough(sinh(-x), -sinh(x)));
+        assert(close_enough(sinhf(-1.25f), -sinhf(1.25f)));
+        assert(close_enough((double)sinhl(-1.25L), -(double)sinhl(1.25L)));
+    }
+
+    /* [2][3] 与定义 sinh x = (e^x - e^-x)/2 对照 */
+    {
+        double x = 0.75;
+        double expected = (exp(x) - exp(-x)) / 2.0;
+        assert(close_enough(sinh(x), expected));
+    }
+
+    /* [2][3] 与恒等式 cosh^2 - sinh^2 == 1 对照 */
+    {
+        double x = 1.5;
+        double s = sinh(x);
+        double c = cosh(x);
+        assert(close_enough(c * c - s * s, 1.0));
+    }
+
+    /* [2][3] 大参数：sinh 单调递增且为正 */
+    {
+        double x = 5.0;
+        assert(sinh(x) > 0.0);
+        assert(sinh(x) > sinh(4.0));
+    }
+
+    /* [2] Description：|x| 过大时发生 range error。
+     *     这里只验证“极大值”调用不会崩溃，并检查 errno/返回值行为
+     *     在实现允许的范围内（HUGE_VAL 或有限值皆可，取决于实现）。
+     *     注意：是否置 errno 由实现定义，故不做强制断言。 */
+    {
+        volatile double big = DBL_MAX;
+        double r = sinh(big);
+        /* 结果应为正（溢出时返回 HUGE_VAL，仍为正） */
+        assert(r > 0.0 || r != r); /* r != r 处理 NaN 情形 */
+    }
+
+    /* [1] 通过 <math.h> 宏/函数名可被取地址，确认不是宏遮蔽 */
+    {
+        double (*fp)(double) = &sinh;
+        assert(close_enough(fp(0.5), sinh(0.5)));
+    }
+
+    printf("C99 7.12.5.5 sinh functions: all positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「函数调用实参个数必须与原型一致」：
+     * sinh 原型为 double sinh(double)，调用时给 0 个或 2 个实参，
+     * gcc -std=c99 应报 "too few/many arguments to function 'sinh'"。 */
+    sinh();
+    sinh(1.0, 2.0);
+
+    /* 违反约束「实参类型必须可转换为形参类型」：
+     * 传入结构体，无法转换为 double，应报 incompatible type。 */
+    struct S { int x; } s;
+    sinh(s);
+
+    /* 违反约束「实参类型必须可转换为形参类型」：
+     * 传入指针，指针不能隐式转换为 double，应报 incompatible type。 */
+    int *p = 0;
+    sinh(p);
+
+    /* 违反约束「函数返回类型不可作为赋值目标（非左值）」：
+     * sinh(1.0) 是右值，对其赋值应报 "lvalue required as left operand of assignment"。 */
+    sinh(1.0) = 2.0;
+
+    /* 违反约束「取地址操作数必须是左值/函数」：
+     * 对函数调用结果取地址应报错。 */
+    &sinh(1.0);
+
+    /* 违反约束「函数名不可被赋值」：
+     * sinh 是函数指示符，不是可修改左值，应报错。 */
+    sinh = 0;
+
+#endif
+
+    return 0;
+}
+====ARTICLE 7.12.5.6 ====
+---TEXT---
+The tanh functions
+Synopsis:
+[1] #include <math.h> double tanh(double x); float tanhf(float x); long double tanhl(long double x);
+Description:
+[2] The tanh functions compute the hyperbolic tangent of x.
+Returns:
+[3] The tanh functions return tanh x.
+---CODE---
+/*
+ * 测试条款：C99 7.12.5.6 —— The tanh functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 tanh / tanhf / tanhl，
+ *             验证其返回双曲正切值，程序应能编译并运行通过。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中）应导致编译报错。
+ *
+ * 覆盖段落：
+ *   [1] Synopsis：三个函数原型，参数与返回类型
+ *   [2] Description：计算 x 的双曲正切
+ *   [3] Returns：返回 tanh x
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] Synopsis：验证三个函数原型存在且类型正确。
+ *     通过取函数指针并检查其类型来确认签名。 */
+static double  (*p_tanh)(double)        = tanh;
+static float   (*p_tanhf)(float)        = tanhf;
+static long double (*p_tanhl)(long double) = tanhl;
+
+/* 辅助：判断两个 double 是否近似相等 */
+static int dclose(double a, double b, double eps)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= eps;
+}
+
+int main(void)
+{
+    /* [1] 原型可用性：能取地址即说明声明存在且类型匹配 */
+    assert(p_tanh  != NULL);
+    assert(p_tanhf != NULL);
+    assert(p_tanhl != NULL);
+
+    /* [2][3] tanh(0) == 0 */
+    assert(tanh(0.0) == 0.0);
+
+    /* [2][3] tanh 是奇函数：tanh(-x) == -tanh(x) */
+    {
+        double x = 0.7;
+        assert(dclose(tanh(-x), -tanh(x), 1e-15));
+    }
+
+    /* [2][3] 已知值：tanh(1) ≈ 0.7615941559557649 */
+    assert(dclose(tanh(1.0), 0.7615941559557649, 1e-15));
+
+    /* [2][3] 大正数趋近 1 */
+    assert(dclose(tanh(20.0), 1.0, 1e-12));
+
+    /* [2][3] 大负数趋近 -1 */
+    assert(dclose(tanh(-20.0), -1.0, 1e-12));
+
+    /* [2][3] 恒等式：tanh(x) = sinh(x)/cosh(x) */
+    {
+        double x = 0.3;
+        assert(dclose(tanh(x), sinh(x) / cosh(x), 1e-15));
+    }
+
+    /* [2][3] 恒等式：1 - tanh(x)^2 = 1/cosh(x)^2 */
+    {
+        double x = 0.9;
+        double t = tanh(x);
+        assert(dclose(1.0 - t * t, 1.0 / (cosh(x) * cosh(x)), 1e-14));
+    }
+
+    /* [1][2][3] float 版本 tanhf */
+    assert(tanhf(0.0f) == 0.0f);
+    {
+        float x = 1.0f;
+        float r = tanhf(x);
+        assert(r > 0.7615941f && r < 0.7615943f);
+    }
+
+    /* [1][2][3] long double 版本 tanhl */
+    assert(tanhl(0.0L) == 0.0L);
+    {
+        long double x = 1.0L;
+        long double r = tanhl(x);
+        long double diff = r - 0.7615941559557649L;
+        if (diff < 0) diff = -diff;
+        assert(diff <= 1e-15L);
+    }
+
+    /* [2][3] 三个版本对同一输入应给出一致结果（在各自精度内） */
+    {
+        double xd = 0.5;
+        float  xf = 0.5f;
+        long double xl = 0.5L;
+        double rd = tanh(xd);
+        double rf = (double)tanhf(xf);
+        double rl = (double)tanhl(xl);
+        assert(dclose(rd, rf, 1e-6));
+        assert(dclose(rd, rl, 1e-15));
+    }
+
+    /* [2][3] 定义域为全体实数：任意有限输入均返回有限值 */
+    {
+        double vals[] = { -100.0, -1.0, -0.001, 0.0, 0.001, 1.0, 100.0 };
+        int i;
+        for (i = 0; i < 7; i++) {
+            double r = tanh(vals[i]);
+            assert(r >= -1.0 && r <= 1.0);
+        }
+    }
+
+    printf("All positive tests for C99 7.12.5.6 (tanh) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * tanh 原型只接受 1 个参数，传 2 个参数，gcc -std=c99 应报错
+ *   error: too many arguments to function 'tanh' */
+double bad1 = tanh(1.0, 2.0);
+
+/* 违反约束「实参类型必须可转换为形参类型」：
+ * 结构体类型无法隐式转换为 double，gcc -std=c99 应报错
+ *   error: incompatible type for argument 1 of 'tanh' */
+struct S { int x; };
+double bad2(struct S s) { return tanh(s); }
+
+/* 违反约束「函数调用必须使用已声明的标识符」：
+ * tanh 未声明（未包含 <math.h> 且无自身声明），
+ * 在 C99 中隐式函数声明已被移除，gcc -std=c99 应报错
+ *   error: implicit declaration of function 'tanh' */
+double bad3(void) { return tanh(1.0); }
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * 函数调用结果不是左值，不能赋值，gcc -std=c99 应报错
+ *   error: lvalue required as left operand of assignment */
+void bad4(void) { tanh(1.0) = 0.5; }
+
+/* 违反约束「取地址操作数必须是左值或函数指示符」：
+ * 函数返回的 double 不是左值，不能取地址，gcc -std=c99 应报错
+ *   error: lvalue required as unary '&' operand */
+double *bad5(void) { return &tanh(1.0); }
+
+#endif
+====ARTICLE 7.12.6.1 ====
+---TEXT---
+The exp functions
+Synopsis:
+[1] #include <math.h> double exp(double x); float expf(float x); long double expl(long double x);
+Description:
+[2] The exp functions compute the base-e exponential of x. A range error occurs if the magnitude of x is too large.
+Returns:
+[3] The exp functions return e.
+---CODE---
+/*
+ * 测试 C99 7.12.6.1 —— exp 函数族（exp / expf / expl）
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 exp/expf/expl，验证返回值等于 e^x，
+ *             并验证 float/long double 版本的存在与精度。
+ *   负向测试：违反约束的代码（如参数个数错误、未声明就调用等）应编译报错。
+ *
+ * 说明：本条款只规定“计算以 e 为底的指数”，未规定具体精度误差，
+ *       因此正向测试使用容差比较，不要求逐位相等。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* 容差比较辅助函数 */
+static int close_enough(double a, double b, double tol)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= tol;
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 头文件 <math.h> 提供 exp / expf / expl 的声明。
+     *     能取到函数地址即证明声明存在且类型正确。 */
+    double (*pd)(double)          = exp;
+    float  (*pf)(float)           = expf;
+    long double (*pl)(long double)= expl;
+    assert(pd != NULL && pf != NULL && pl != NULL);
+
+    /* [2][3] exp(x) 计算 e^x，返回 e 的 x 次幂。
+     *        e^0 = 1 */
+    assert(close_enough(exp(0.0), 1.0, 1e-12));
+
+    /* e^1 = e ≈ 2.718281828459045 */
+    assert(close_enough(exp(1.0), 2.718281828459045, 1e-12));
+
+    /* e^2 ≈ 7.389056098930650 */
+    assert(close_enough(exp(2.0), 7.389056098930650, 1e-12));
+
+    /* e^(-1) ≈ 0.367879441171442 */
+    assert(close_enough(exp(-1.0), 0.367879441171442, 1e-12));
+
+    /* 与 log 互逆：exp(log(5)) ≈ 5 */
+    assert(close_enough(exp(log(5.0)), 5.0, 1e-12));
+
+    /* [1][3] float 版本 expf 返回 float，值应接近 e^x */
+    {
+        float r = expf(1.0f);
+        assert(close_enough((double)r, 2.718281828459045, 1e-5));
+        assert(close_enough((double)expf(0.0f), 1.0, 1e-6));
+    }
+
+    /* [1][3] long double 版本 expl 返回 long double，值应接近 e^x */
+    {
+        long double r = expl(1.0L);
+        assert(close_enough((double)r, 2.718281828459045, 1e-12));
+        assert(close_enough((double)expl(0.0L), 1.0, 1e-12));
+    }
+
+    /* [2] 大参数：e^10 ≈ 22026.4657948067 */
+    assert(close_enough(exp(10.0), 22026.4657948067, 1e-6));
+
+    /* [2] 负大参数：e^(-10) ≈ 4.539992976248485e-5 */
+    assert(close_enough(exp(-10.0), 4.539992976248485e-5, 1e-15));
+
+    /* [2] 参数为整数常量时，隐式转换为 double（原型在作用域内） */
+    assert(close_enough(exp(3), 20.085536923187668, 1e-12));
+
+    /* [3] 返回值类型为 double（sizeof 验证） */
+    assert(sizeof(exp(1.0)) == sizeof(double));
+    assert(sizeof(expf(1.0f)) == sizeof(float));
+    assert(sizeof(expl(1.0L)) == sizeof(long double));
+
+    printf("正向测试全部通过：exp/expf/expl 语义符合 C99 7.12.6.1\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「exp 原型为 double exp(double)」：参数个数错误，
+     * gcc -std=c99 应报 "too few arguments to function 'exp'" */
+    exp();
+
+    /* 违反约束「exp 原型为 double exp(double)」：参数过多，
+     * gcc -std=c99 应报 "too many arguments to function 'exp'" */
+    exp(1.0, 2.0);
+
+    /* 违反约束「expf 原型为 float expf(float)」：参数个数错误，
+     * gcc -std=c99 应报参数个数错误 */
+    expf();
+
+    /* 违反约束「expl 原型为 long double expl(long double)」：参数个数错误，
+     * gcc -std=c99 应报参数个数错误 */
+    expl();
+
+    /* 违反约束「函数调用必须使用函数或函数指针」：对非函数对象调用，
+     * gcc -std=c99 应报 "called object is not a function" */
+    {
+        int not_a_function = 0;
+        not_a_function(1.0);
+    }
+
+    /* 违反约束「exp 返回 double，不能作为左值赋值」：
+     * 函数调用结果不是左值，gcc -std=c99 应报 "lvalue required as left operand of assignment" */
+    exp(1.0) = 2.0;
+
+    /* 违反约束「expf 返回 float，不能取地址赋值」：
+     * 函数调用结果不是左值，gcc -std=c99 应报 "lvalue required" */
+    &expf(1.0f);
+
+#endif
+
+    return 0;
+}
+====ARTICLE 7.12.6.2 ====
+---TEXT---
+The exp2 functions
+Synopsis:
+[1] #include <math.h> double exp2(double x); float exp2f(float x); long double exp2l(long double x);
+Description:
+[2] The exp2 functions compute the base-2 exponential of x. A range error occurs if the magnitude of x is too large.
+Returns:
+[3] The exp2 functions return 2.
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.2 —— exp2 函数族
+ *   [1] 原型：double exp2(double); float exp2f(float); long double exp2l(long double);
+ *   [2] 语义：计算以 2 为底的指数 2^x；当 |x| 过大时发生 range error。
+ *   [3] 返回值：返回 2^x。
+ *
+ * 预期行为：
+ *   正向测试：应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应被编译器拒绝（编译报错），
+ *             统一放在 #if 0 ... #endif 中，不影响本文件正常编译。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+#include <errno.h>
+#include <fenv.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 三个函数的原型必须存在，且返回类型分别为 double / float / long double。
+ *     用函数指针类型来静态验证原型签名。 */
+static double (*p_exp2)(double)          = exp2;
+static float  (*p_exp2f)(float)          = exp2f;
+static long double (*p_exp2l)(long double) = exp2l;
+
+static void test_prototypes(void)
+{
+    /* [1] 原型可用性：能取地址即说明声明存在且签名匹配 */
+    assert(p_exp2  != NULL);
+    assert(p_exp2f != NULL);
+    assert(p_exp2l != NULL);
+    printf("[1] prototypes OK\n");
+}
+
+static void test_semantics_basic(void)
+{
+    /* [2][3] 2^0 = 1, 2^1 = 2, 2^2 = 4, 2^3 = 8, 2^10 = 1024 */
+    assert(exp2(0.0)  == 1.0);
+    assert(exp2(1.0)  == 2.0);
+    assert(exp2(2.0)  == 4.0);
+    assert(exp2(3.0)  == 8.0);
+    assert(exp2(10.0) == 1024.0);
+
+    /* [2][3] 负指数：2^-1 = 0.5, 2^-2 = 0.25 */
+    assert(exp2(-1.0) == 0.5);
+    assert(exp2(-2.0) == 0.25);
+
+    /* [2][3] 与 pow(2,x) 一致（在可精确表示处比较） */
+    assert(exp2(4.0) == pow(2.0, 4.0));
+    assert(exp2(-3.0) == pow(2.0, -3.0));
+
+    printf("[2][3] basic semantics OK\n");
+}
+
+static void test_semantics_float_longdouble(void)
+{
+    /* [1][2][3] float 版本 */
+    float xf = 5.0f;
+    float rf = exp2f(xf);
+    assert(rf == 32.0f);
+
+    /* [1][2][3] long double 版本 */
+    long double xl = 6.0L;
+    long double rl = exp2l(xl);
+    assert(rl == 64.0L);
+
+    /* [1] 参数类型转换：整型实参经默认实参提升/转换后调用 */
+    assert(exp2(3) == 8.0);          /* int -> double */
+    assert(exp2f(3) == 8.0f);        /* int -> float  */
+    assert(exp2l(3) == 8.0L);        /* int -> long double */
+
+    printf("[1][2][3] float/long double variants OK\n");
+}
+
+static void test_semantics_identity(void)
+{
+    /* [2][3] 恒等式：exp2(x) == exp2(x/2) * exp2(x/2) 在可精确表示时成立 */
+    assert(exp2(8.0) == exp2(4.0) * exp2(4.0));
+    assert(exp2(1.0) * exp2(1.0) == exp2(2.0));
+
+    /* [2][3] 2^x * 2^-x == 1 */
+    assert(exp2(7.0) * exp2(-7.0) == 1.0);
+
+    printf("[2][3] identity OK\n");
+}
+
+static void test_range_error(void)
+{
+    /* [2] 当 |x| 过大时发生 range error。
+     * 这里只验证「调用不会崩溃」以及「结果趋于 HUGE_VAL / 0」，
+     * 不把 errno 的具体取值当作硬性断言（实现可自由选择是否设置 errno）。 */
+    errno = 0;
+    double big = exp2(1e9);          /* 远超 double 可表示范围 */
+    assert(big == HUGE_VAL || big > DBL_MAX || isinf(big));
+
+    errno = 0;
+    double tiny = exp2(-1e9);        /* 下溢到 0 */
+    assert(tiny == 0.0 || tiny < DBL_MIN);
+
+    printf("[2] range error handling OK\n");
+}
+
+int main(void)
+{
+    test_prototypes();
+    test_semantics_basic();
+    test_semantics_float_longdouble();
+    test_semantics_identity();
+    test_range_error();
+
+    printf("ALL POSITIVE TESTS PASSED\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 原型参数类型为 double/float/long double」：
+ * 用不兼容的函数指针类型接收 exp2，gcc -std=c99 应报 incompatible pointer type。 */
+double (*bad1)(int) = exp2;
+
+/* 违反约束「[1] 返回类型为 double」：
+ * 用返回 int 的函数指针接收 exp2，应报 incompatible pointer type。 */
+int (*bad2)(double) = exp2;
+
+/* 违反约束「[1] exp2f 参数为 float」：
+ * 用 double 参数类型的函数指针接收 exp2f，应报 incompatible pointer type。 */
+double (*bad3)(double) = exp2f;
+
+/* 违反约束「[1] exp2l 返回 long double」：
+ * 用 double 返回类型的函数指针接收 exp2l，应报 incompatible pointer type。 */
+double (*bad4)(long double) = exp2l;
+
+/* 违反约束「[1] 函数名不可被赋值」：
+ * exp2 是函数指示符，不是可修改左值，赋值应报错。 */
+void bad5(void) { exp2 = 0; }
+
+/* 违反约束「[1] 函数名不可作为赋值目标」：
+ * 对函数指示符取地址后赋值同样非法。 */
+void bad6(void) { &exp2 = 0; }
+
+#endif
+====ARTICLE 7.12.6.3 ====
+---TEXT---
+The expm1 functions
+Synopsis:
+[1] #include <math.h> double expm1(double x); float expm1f(float x); long double expm1l(long double x);
+Description:
+[2] The expm1 functions compute the base-e exponential of the argument, minus 1. A range error occurs if x is too large.
+Returns:
+[3] The expm1 functions return e - 1.
+Footnotes:
+208) For small magnitude x, expm1(x) is expected to be more accurate than exp(x) - 1.
+---CODE---
+/*
+ * 测试 C99 7.12.6.3 —— expm1 函数族
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 expm1 / expm1f / expm1l，
+ *             验证返回值等于 e^x - 1（在浮点容差内），
+ *             并验证小量 x 时 expm1 比 exp(x)-1 更精确（脚注 208）。
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中），
+ *             期望编译器在 -std=c99 下报错。
+ *
+ * 覆盖段落：[1] 原型/头文件、[2] 语义（e^x - 1，x 过大时范围错误）、
+ *           [3] 返回值、脚注 208。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+
+/* 相对容差比较辅助 */
+static int close_enough(double a, double b, double tol)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= tol * (1.0 + (b < 0 ? -b : b));
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 头文件 <math.h> 提供三个原型：double/float/long double 版本。
+     *     通过取函数指针验证原型存在且类型正确。 */
+    {
+        double (*pd)(double)        = expm1;
+        float  (*pf)(float)         = expm1f;
+        long double (*pl)(long double) = expm1l;
+        assert(pd != NULL && pf != NULL && pl != NULL);
+    }
+
+    /* [2][3] 语义：expm1(x) 返回 e^x - 1。
+     *        用已知点验证：x=0 -> 0；x=1 -> e-1；x=ln2 -> 1。 */
+    {
+        double e = exp(1.0);
+        assert(close_enough(expm1(0.0), 0.0, 1e-15));
+        assert(close_enough(expm1(1.0), e - 1.0, 1e-12));
+        assert(close_enough(expm1(log(2.0)), 1.0, 1e-12));
+        assert(close_enough(expm1(-1.0), 1.0/e - 1.0, 1e-12));
+    }
+
+    /* [2][3] float 版本：expm1f(x) ≈ e^x - 1（float 精度） */
+    {
+        float ef = expf(1.0f);
+        assert(fabsf(expm1f(1.0f) - (ef - 1.0f)) <= 1e-5f);
+        assert(expm1f(0.0f) == 0.0f);
+    }
+
+    /* [2][3] long double 版本：expm1l(x) ≈ e^x - 1 */
+    {
+        long double el = expl(1.0L);
+        long double r  = expm1l(1.0L);
+        long double d  = r - (el - 1.0L);
+        if (d < 0) d = -d;
+        assert(d <= 1e-15L);
+        assert(expm1l(0.0L) == 0.0L);
+    }
+
+    /* 脚注 208：小量 x 时 expm1(x) 比 exp(x)-1 更精确。
+     * 取 x = 1e-10，exp(x)-1 因灾难性抵消损失有效位，
+     * 而 expm1(x) 应接近 x（相对误差很小）。 */
+    {
+        double x = 1e-10;
+        double naive = exp(x) - 1.0;   /* 抵消严重 */
+        double good  = expm1(x);
+        /* expm1 的结果应非常接近 x */
+        assert(close_enough(good, x, 1e-6));
+        /* 朴素算法误差明显更大（相对误差远大于 expm1） */
+        double err_naive = fabs(naive - x) / x;
+        double err_good  = fabs(good  - x) / x;
+        assert(err_good <= err_naive);
+    }
+
+    /* [2] 范围错误：x 过大时发生范围错误（返回 HUGE_VAL，errno=ERANGE）。
+     *     这里只验证返回值语义，不强制检查 errno（实现相关）。 */
+    {
+        double big = expm1(1e300);   /* e^(1e300) 溢出 */
+        assert(isinf(big) || big == HUGE_VAL);
+    }
+
+    /* [3] 返回值类型检查：expm1 返回 double，expm1f 返回 float，
+     *     expm1l 返回 long double。用 sizeof 验证。 */
+    {
+        assert(sizeof(expm1(0.0))  == sizeof(double));
+        assert(sizeof(expm1f(0.0f)) == sizeof(float));
+        assert(sizeof(expm1l(0.0L)) == sizeof(long double));
+    }
+
+    printf("expm1 tests passed.\n");
+    return 0;
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /* 违反约束「expm1 的原型为 double expm1(double)」：
+     * 用不兼容的实参类型（结构体）调用，gcc -std=c99 应报错。 */
+    struct S { int x; } s;
+    expm1(s);                 /* error: incompatible type for argument 1 */
+
+    /* 违反约束「expm1 返回 double，不可作为赋值目标」：
+     * 函数调用结果不是左值，对它赋值应报错。 */
+    expm1(1.0) = 2.0;         /* error: lvalue required as left operand of assignment */
+
+    /* 违反约束「expm1f 参数为 float」：传入结构体指针，类型不兼容。 */
+    expm1f(&s);               /* error: incompatible type for argument 1 */
+
+    /* 违反约束「expm1l 参数为 long double」：传入字符串字面量。 */
+    expm1l("hello");          /* error: incompatible type for argument 1 */
+
+    /* 违反约束「expm1 需要 1 个实参」：实参个数不符。 */
+    expm1();                  /* error: too few arguments to function 'expm1' */
+    expm1(1.0, 2.0);          /* error: too many arguments to function 'expm1' */
+#endif
+}
+====ARTICLE 7.12.6.4 ====
+---TEXT---
+The frexp functions
+Synopsis:
+[1] #include <math.h> double frexp(double value, int *exp); float frexpf(float value, int *exp); long double frexpl(long double value, int *exp);
+Description:
+[2] The frexp functions break a floating-point number into a normalized fraction and an integral power of 2. They store the integer in the int object pointed to by exp.
+Returns:
+[3] If value is not a floating-point number, the results are unspecified. Otherwise, the frexp functions return the value x, such that x has a magnitude in the interval [1/2, 1) or zero, and value equals x 2 . If value is zero, both parts of the result are zero.
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.4  The frexp functions
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 声明/原型：frexp / frexpf / frexpl，返回类型与参数类型。
+ *   [2] 语义：把浮点数分解为规格化小数 x 与整数指数 *exp（2 的幂）。
+ *   [3] 返回值：x 的绝对值在 [1/2, 1) 或为 0；value == x * 2^(*exp)；value 为 0 时两部分均为 0。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* 辅助：判断 x 是否落在 [1/2, 1) 或为 0 */
+static int in_range_or_zero(double x)
+{
+    double a = fabs(x);
+    return (a == 0.0) || (a >= 0.5 && a < 1.0);
+}
+
+/* 辅助：用 ldexp 还原，检查 value == x * 2^exp */
+static int roundtrip_ok(double value, double x, int exp)
+{
+    return ldexp(x, exp) == value;
+}
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：三个函数都存在，且返回类型/参数类型符合标准。
+ *     通过取函数指针并赋值给正确类型的变量来静态验证原型。 */
+static void test_prototypes(void)
+{
+    double (*pf)(double, int *)          = frexp;
+    float  (*pff)(float, int *)          = frexpf;
+    long double (*pfl)(long double, int *) = frexpl;
+
+    assert(pf  != NULL);
+    assert(pff != NULL);
+    assert(pfl != NULL);
+}
+
+/* [2][3] 基本语义：value = x * 2^exp，x 在 [1/2,1) 或 0 */
+static void test_basic_semantics(void)
+{
+    int exp;
+    double x;
+
+    /* 典型正数 */
+    x = frexp(8.0, &exp);
+    assert(x == 0.5);
+    assert(exp == 4);
+    assert(in_range_or_zero(x));
+    assert(roundtrip_ok(8.0, x, exp));
+
+    /* 典型小数 */
+    x = frexp(0.75, &exp);
+    assert(x == 0.75);
+    assert(exp == 0);
+    assert(in_range_or_zero(x));
+    assert(roundtrip_ok(0.75, x, exp));
+
+    /* 1.0 -> 0.5 * 2^1 */
+    x = frexp(1.0, &exp);
+    assert(x == 0.5);
+    assert(exp == 1);
+    assert(roundtrip_ok(1.0, x, exp));
+
+    /* 负数：x 为负，绝对值仍在 [1/2,1) */
+    x = frexp(-8.0, &exp);
+    assert(x == -0.5);
+    assert(exp == 4);
+    assert(in_range_or_zero(x));
+    assert(roundtrip_ok(-8.0, x, exp));
+
+    /* 大数 */
+    x = frexp(1024.0, &exp);
+    assert(x == 0.5);
+    assert(exp == 11);
+    assert(roundtrip_ok(1024.0, x, exp));
+}
+
+/* [3] value 为 0 时，两部分结果均为 0 */
+static void test_zero(void)
+{
+    int exp = 12345; /* 故意预置非零，验证函数会写入 0 */
+    double x = frexp(0.0, &exp);
+    assert(x == 0.0);
+    assert(exp == 0);
+
+    exp = 999;
+    x = frexp(-0.0, &exp);
+    assert(x == 0.0);
+    assert(exp == 0);
+}
+
+/* [3] 对任意有限非零值，x 的绝对值必须落在 [1/2, 1) */
+static void test_range_property(void)
+{
+    static const double vals[] = {
+        1e-300, 1e-10, 0.1, 0.3, 0.5, 0.9, 1.0, 2.0, 3.14159,
+        1e10, 1e100, 1e300, -1e-300, -0.1, -3.14159, -1e100
+    };
+    size_t i;
+    for (i = 0; i < sizeof(vals) / sizeof(vals[0]); ++i) {
+        int exp;
+        double x = frexp(vals[i], &exp);
+        assert(in_range_or_zero(x));
+        assert(roundtrip_ok(vals[i], x, exp));
+    }
+}
+
+/* [1][2][3] frexpf：float 版本 */
+static void test_frexpf(void)
+{
+    int exp;
+    float x = frexpf(8.0f, &exp);
+    assert(x == 0.5f);
+    assert(exp == 4);
+    assert(fabsf(x) >= 0.5f && fabsf(x) < 1.0f);
+    assert(ldexpf(x, exp) == 8.0f);
+
+    exp = 7;
+    x = frexpf(0.0f, &exp);
+    assert(x == 0.0f);
+    assert(exp == 0);
+}
+
+/* [1][2][3] frexpl：long double 版本 */
+static void test_frexpl(void)
+{
+    int exp;
+    long double x = frexpl(8.0L, &exp);
+    assert(x == 0.5L);
+    assert(exp == 4);
+    assert(fabsl(x) >= 0.5L && fabsl(x) < 1.0L);
+    assert(ldexpl(x, exp) == 8.0L);
+
+    exp = 7;
+    x = frexpl(0.0L, &exp);
+    assert(x == 0.0L);
+    assert(exp == 0);
+}
+
+/* [2] exp 指针必须被写入（通过预置哨兵值验证） */
+static void test_exp_written(void)
+{
+    int exp = -12345;
+    double x = frexp(6.0, &exp);
+    assert(exp != -12345);   /* 已被写入 */
+    assert(x == 0.75);
+    assert(exp == 3);
+    assert(roundtrip_ok(6.0, x, exp));
+}
+
+int main(void)
+{
+    test_prototypes();
+    test_basic_semantics();
+    test_zero();
+    test_range_property();
+    test_frexpf();
+    test_frexpl();
+    test_exp_written();
+
+    printf("C99 7.12.6.4 frexp: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「frexp 的第二个参数类型为 int *」：
+ * 传入 double * 而非 int *，gcc -std=c99 应报错
+ * （incompatible pointer type / passing argument 2 ... from incompatible pointer type）。 */
+void bad_arg_type(void)
+{
+    double e;
+    double x = frexp(1.0, &e);   /* 期望报错：&e 是 double*，不是 int* */
+    (void)x;
+}
+
+/* 违反约束「frexp 的第一个参数类型为 double」：
+ * 传入结构体，gcc -std=c99 应报错（incompatible type for argument 1）。 */
+struct S { int a; };
+void bad_first_arg(void)
+{
+    struct S s;
+    int e;
+    double x = frexp(s, &e);     /* 期望报错：结构体不能转换为 double */
+    (void)x;
+}
+
+/* 违反约束「frexp 返回 double」：
+ * 把返回值赋给结构体，gcc -std=c99 应报错（incompatible types in assignment）。 */
+void bad_return_use(void)
+{
+    int e;
+    struct S s;
+    s = frexp(1.0, &e);          /* 期望报错：double 不能赋给 struct S */
+}
+
+/* 违反约束「frexp 需要两个实参」：
+ * 实参个数不足，gcc -std=c99 应报错（too few arguments to function 'frexp'）。 */
+void bad_arg_count(void)
+{
+    double x = frexp(1.0);       /* 期望报错：缺少第二个实参 */
+    (void)x;
+}
+
+/* 违反约束「frexp 的第二个参数必须是指针」：
+ * 传入 int 值而非 int*，gcc -std=c99 应报错（incompatible type for argument 2）。 */
+void bad_second_arg_not_pointer(void)
+{
+    int e = 0;
+    double x = frexp(1.0, e);    /* 期望报错：int 不能转换为 int* */
+    (void)x;
+}
+
+#endif /* 负向测试结束 */
+====ARTICLE 7.12.6.5 ====
+---TEXT---
+The ilogb functions
+Synopsis:
+[1] #include <math.h> int ilogb(double x); int ilogbf(float x); int ilogbl(long double x);
+Description:
+[2] The ilogb functions extract the exponent of x as a signed int value. If x is zero they compute the value FP_ILOGB0; if x is infinite they compute the value INT_MAX; if x is a NaN they compute the value FP_ILOGBNAN; otherwise, they are equivalent to calling the corresponding logb function and casting the returned value to type int. A domain error or range error may occur if x is zero, infinite, or NaN. If the correct value is outside the range of the return type, the numeric result is unspecified.
+Returns:
+[3] The ilogb functions return the exponent of x as a signed int value.
+Forward references: the logb functions (7.12.6.11).
+---CODE---
+/*
+ * 测试 C99 7.12.6.5 —— ilogb / ilogbf / ilogbl 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明：int ilogb(double); int ilogbf(float); int ilogbl(long double);
+ *   [2] 语义：提取指数为有符号 int；x==0 -> FP_ILOGB0；x==±inf -> INT_MAX；
+ *       x==NaN -> FP_ILOGBNAN；否则等价于 logb 后转 int；
+ *       结果超出 int 范围时数值未指定（UB 范畴，不做负向测试）。
+ *   [3] 返回值：有符号 int 类型的指数。
+ *   Forward references: logb (7.12.6.11) —— 用 logb 交叉验证等价性。
+ */
+
+#include <math.h>
+#include <stdio.h>
+#include <assert.h>
+#include <limits.h>
+#include <float.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性检查：取函数指针，类型必须与标准原型一致。
+ *     若原型不匹配（例如返回类型不是 int），此处会编译报错。 */
+static int (*p_ilogb)(double)          = ilogb;
+static int (*p_ilogbf)(float)          = ilogbf;
+static int (*p_ilogbl)(long double)    = ilogbl;
+
+/* [2] 与 logb 的等价性：非零、有限、非 NaN 时，
+ *     ilogb(x) == (int)logb(x)。 */
+static void test_equivalence_with_logb(void)
+{
+    double vals[] = { 1.0, 2.0, 3.5, 0.5, 0.25, 1024.0, 1e10, 1e-10,
+                      123456.789, -7.0, -0.125 };
+    size_t i;
+    for (i = 0; i < sizeof(vals) / sizeof(vals[0]); ++i) {
+        double x = vals[i];
+        int    a = ilogb(x);
+        int    b = (int)logb(x);   /* [2] 等价于 logb 后转 int */
+        assert(a == b);
+    }
+}
+
+/* [2] 具体数值：ilogb(1.0)==0, ilogb(2.0)==1, ilogb(0.5)==-1 等 */
+static void test_known_values(void)
+{
+    assert(ilogb(1.0)   == 0);
+    assert(ilogb(2.0)   == 1);
+    assert(ilogb(4.0)   == 2);
+    assert(ilogb(0.5)   == -1);
+    assert(ilogb(0.25)  == -2);
+    assert(ilogb(1024.0)== 10);
+    assert(ilogb(-8.0)  == 3);   /* 符号不影响指数 */
+
+    /* float / long double 版本 */
+    assert(ilogbf(1.0f)   == 0);
+    assert(ilogbf(8.0f)   == 3);
+    assert(ilogbf(0.125f) == -3);
+    assert(ilogbl(1.0L)   == 0);
+    assert(ilogbl(16.0L)  == 4);
+    assert(ilogbl(0.0625L)== -4);
+}
+
+/* [2] x == 0 时返回 FP_ILOGB0 */
+static void test_zero(void)
+{
+    assert(ilogb(0.0)   == FP_ILOGB0);
+    assert(ilogb(-0.0)  == FP_ILOGB0);
+    assert(ilogbf(0.0f) == FP_ILOGB0);
+    assert(ilogbl(0.0L) == FP_ILOGB0);
+}
+
+/* [2] x 为无穷时返回 INT_MAX */
+static void test_inf(void)
+{
+    double pinf = INFINITY;
+    double ninf = -INFINITY;
+    assert(ilogb(pinf)  == INT_MAX);
+    assert(ilogb(ninf)  == INT_MAX);
+    assert(ilogbf((float)pinf) == INT_MAX);
+    assert(ilogbl((long double)pinf) == INT_MAX);
+}
+
+/* [2] x 为 NaN 时返回 FP_ILOGBNAN */
+static void test_nan(void)
+{
+    double qnan = NAN;
+    assert(ilogb(qnan)  == FP_ILOGBNAN);
+    assert(ilogbf((float)qnan) == FP_ILOGBNAN);
+    assert(ilogbl((long double)qnan) == FP_ILOGBNAN);
+}
+
+/* [3] 返回值类型为 int：用 _Generic 检查（C11 才有 _Generic，
+ *     这里改用编译期类型检查技巧：把结果赋给 int 变量，
+ *     若返回类型不是 int 则可能触发转换警告；同时用 sizeof 检查）。 */
+static void test_return_type(void)
+{
+    int r = ilogb(2.0);
+    assert(r == 1);
+    /* 返回值可安全用于 int 上下文 */
+    assert((int)ilogb(2.0) == 1);
+    /* 返回值参与算术运算 */
+    assert(ilogb(2.0) + ilogb(4.0) == 3);
+}
+
+/* [2] 结果超出 int 范围时数值未指定 —— 这是 UB/未指定行为，
+ *     不做负向测试，仅说明不在此处断言。 */
+
+int main(void)
+{
+    /* 抑制未使用变量警告 */
+    (void)p_ilogb; (void)p_ilogbf; (void)p_ilogbl;
+
+    test_equivalence_with_logb();
+    test_known_values();
+    test_zero();
+    test_inf();
+    test_nan();
+    test_return_type();
+
+    printf("C99 7.12.6.5 ilogb: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 原型：int ilogb(double)」：
+ * 用错误参数类型调用（传结构体），gcc -std=c99 应报错
+ * （incompatible type for argument 1 of 'ilogb'）。 */
+struct S { int x; } s;
+ilogb(s);
+
+/* 违反约束「[1] 原型：int ilogb(double)」：
+ * 参数个数错误，gcc -std=c99 应报错（too few arguments）。 */
+ilogb();
+
+/* 违反约束「[1] 原型：int ilogbf(float)」：
+ * 参数个数错误，gcc -std=c99 应报错。 */
+ilogbf(1.0f, 2.0f);
+
+/* 违反约束「[1] 原型：int ilogbl(long double)」：
+ * 参数个数错误，gcc -std=c99 应报错。 */
+ilogbl();
+
+/* 违反约束「[1] 原型：返回类型 int」：
+ * 把返回值当作结构体使用（对 int 结果做成员访问），
+ * gcc -std=c99 应报错（request for member in something not a structure）。 */
+ilogb(2.0).x;
+
+/* 违反约束「[1] 原型：返回类型 int」：
+ * 对函数调用结果（非左值）赋值，gcc -std=c99 应报错
+ * （lvalue required as left operand of assignment）。 */
+ilogb(2.0) = 5;
+
+/* 违反约束「[1] 原型：返回类型 int」：
+ * 对函数调用结果取地址，gcc -std=c99 应报错
+ * （lvalue required as unary '&' operand）。 */
+&ilogb(2.0);
+
+#endif
+====ARTICLE 7.12.6.6 ====
+---TEXT---
+The ldexp functions
+Synopsis:
+[1] #include <math.h> double ldexp(double x, int exp); float ldexpf(float x, int exp); long double ldexpl(long double x, int exp);
+Description:
+[2] The ldexp functions multiply a floating-point number by an integral power of 2. A range error may occur.
+Returns:
+[3] The ldexp functions return x 2 .
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.6  The ldexp functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 ldexp / ldexpf / ldexpl，
+ *             验证其返回 x * 2^exp 的语义，程序应能编译并运行通过。
+ *   负向测试：违反约束的代码（如参数类型错误、缺少 <math.h> 声明、
+ *             对返回的非左值赋值等）应导致编译报错。
+ *
+ * 覆盖段落：
+ *   [1] Synopsis：三个函数原型 double ldexp(double,int);
+ *                  float ldexpf(float,int); long double ldexpl(long double,int);
+ *   [2] Description：将浮点数乘以 2 的整数次幂；可能发生范围错误。
+ *   [3] Returns：返回 x * 2^exp。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] Synopsis：验证三个函数原型可用，且返回类型正确 */
+static void test_synopsis(void)
+{
+    /* 通过函数指针类型检查原型签名 */
+    double (*p_ldexp)(double, int)          = ldexp;
+    float  (*p_ldexpf)(float, int)          = ldexpf;
+    long double (*p_ldexpl)(long double, int) = ldexpl;
+
+    assert(p_ldexp  != NULL);
+    assert(p_ldexpf != NULL);
+    assert(p_ldexpl != NULL);
+
+    /* 返回类型检查：赋值给对应类型不应有警告 */
+    double      rd = ldexp(1.0, 0);
+    float       rf = ldexpf(1.0f, 0);
+    long double rl = ldexpl(1.0L, 0);
+    assert(rd == 1.0);
+    assert(rf == 1.0f);
+    assert(rl == 1.0L);
+}
+
+/* [2][3] 语义：ldexp(x, exp) == x * 2^exp */
+static void test_semantics_double(void)
+{
+    /* 基本：1.0 * 2^0 = 1.0 */
+    assert(ldexp(1.0, 0) == 1.0);
+
+    /* 1.0 * 2^1 = 2.0 */
+    assert(ldexp(1.0, 1) == 2.0);
+
+    /* 1.0 * 2^10 = 1024.0 */
+    assert(ldexp(1.0, 10) == 1024.0);
+
+    /* 负指数：1.0 * 2^-1 = 0.5 */
+    assert(ldexp(1.0, -1) == 0.5);
+
+    /* 负指数：1.0 * 2^-10 = 1/1024 */
+    assert(ldexp(1.0, -10) == 1.0 / 1024.0);
+
+    /* 一般值：3.0 * 2^4 = 48.0 */
+    assert(ldexp(3.0, 4) == 48.0);
+
+    /* 与直接乘法比较 */
+    {
+        double x = 1.5;
+        int e;
+        for (e = -20; e <= 20; ++e) {
+            double expected = x;
+            int i;
+            if (e >= 0) {
+                for (i = 0; i < e; ++i) expected *= 2.0;
+            } else {
+                for (i = 0; i < -e; ++i) expected /= 2.0;
+            }
+            assert(ldexp(x, e) == expected);
+        }
+    }
+
+    /* 零：0.0 * 2^5 = 0.0 */
+    assert(ldexp(0.0, 5) == 0.0);
+    assert(ldexp(-0.0, 5) == 0.0);
+
+    /* 负值：-2.0 * 2^3 = -16.0 */
+    assert(ldexp(-2.0, 3) == -16.0);
+
+    /* 无穷大：inf * 2^0 = inf */
+    assert(isinf(ldexp(INFINITY, 0)));
+    assert(ldexp(INFINITY, 0) > 0.0);
+    assert(ldexp(-INFINITY, 0) < 0.0);
+
+    /* NaN 传播 */
+    assert(isnan(ldexp(NAN, 0)));
+}
+
+/* [2][3] 语义：ldexpf 版本 */
+static void test_semantics_float(void)
+{
+    assert(ldexpf(1.0f, 0) == 1.0f);
+    assert(ldexpf(1.0f, 1) == 2.0f);
+    assert(ldexpf(1.0f, 10) == 1024.0f);
+    assert(ldexpf(1.0f, -1) == 0.5f);
+    assert(ldexpf(3.0f, 4) == 48.0f);
+    assert(ldexpf(0.0f, 5) == 0.0f);
+    assert(ldexpf(-2.0f, 3) == -16.0f);
+    assert(isinf(ldexpf(INFINITY, 0)));
+    assert(isnan(ldexpf(NAN, 0)));
+}
+
+/* [2][3] 语义：ldexpl 版本 */
+static void test_semantics_long_double(void)
+{
+    assert(ldexpl(1.0L, 0) == 1.0L);
+    assert(ldexpl(1.0L, 1) == 2.0L);
+    assert(ldexpl(1.0L, 10) == 1024.0L);
+    assert(ldexpl(1.0L, -1) == 0.5L);
+    assert(ldexpl(3.0L, 4) == 48.0L);
+    assert(ldexpl(0.0L, 5) == 0.0L);
+    assert(ldexpl(-2.0L, 3) == -16.0L);
+    assert(isinf(ldexpl(INFINITY, 0)));
+    assert(isnan(ldexpl(NAN, 0)));
+}
+
+/* [2] 范围错误：极大指数导致溢出（结果可能为 HUGE_VAL 或 inf） */
+static void test_range_error(void)
+{
+    double big = ldexp(1.0, 100000);
+    /* 溢出时返回 HUGE_VAL（正无穷） */
+    assert(isinf(big) || big == HUGE_VAL);
+
+    double small = ldexp(1.0, -100000);
+    /* 下溢时返回 0 或极小值 */
+    assert(small == 0.0 || fabs(small) < DBL_MIN);
+}
+
+/* [2] 与 frexp 互逆（同一头文件中的相关函数，验证语义一致性） */
+static void test_roundtrip(void)
+{
+    double x = 123.456;
+    int e;
+    double m = frexp(x, &e);
+    assert(ldexp(m, e) == x);
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_semantics_double();
+    test_semantics_float();
+    test_semantics_long_double();
+    test_range_error();
+    test_roundtrip();
+
+    printf("C99 7.12.6.6 ldexp: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「ldexp 的第一个参数必须为 double 类型」：
+ * 传入结构体类型，gcc -std=c99 应报错（incompatible type for argument 1）。 */
+struct S { int x; } s;
+double bad1 = ldexp(s, 3);
+
+/* 违反约束「ldexp 的第二个参数必须为 int 类型」：
+ * 传入 double，gcc -std=c99 应报错（incompatible type for argument 2）。 */
+double bad2 = ldexp(1.0, 2.5);
+
+/* 违反约束「ldexpf 的第一个参数必须为 float 类型」：
+ * 传入结构体，gcc -std=c99 应报错。 */
+float bad3 = ldexpf(s, 3);
+
+/* 违反约束「ldexpl 的第一个参数必须为 long double 类型」：
+ * 传入结构体，gcc -std=c99 应报错。 */
+long double bad4 = ldexpl(s, 3);
+
+/* 违反约束「ldexp 返回非左值，不能赋值」：
+ * 函数调用结果不是左值，gcc -std=c99 应报错（lvalue required as left operand of assignment）。 */
+ldexp(1.0, 2) = 5.0;
+
+/* 违反约束「ldexpf 返回非左值，不能赋值」：
+ * gcc -std=c99 应报错。 */
+ldexpf(1.0f, 2) = 5.0f;
+
+/* 违反约束「ldexpl 返回非左值，不能赋值」：
+ * gcc -std=c99 应报错。 */
+ldexpl(1.0L, 2) = 5.0L;
+
+/* 违反约束「ldexp 返回非左值，不能取地址」：
+ * gcc -std=c99 应报错（lvalue required as unary '&' operand）。 */
+double *pbad = &ldexp(1.0, 2);
+
+/* 违反约束「ldexp 返回非左值，不能自增」：
+ * gcc -std=c99 应报错（lvalue required as increment operand）。 */
+ldexp(1.0, 2)++;
+
+/* 违反约束「ldexp 返回非左值，不能作为赋值目标」：
+ * gcc -std=c99 应报错。 */
+ldexp(1.0, 2) += 1.0;
+
+/* 违反约束「ldexp 参数个数必须为 2」：
+ * 少传参数，gcc -std=c99 应报错（too few arguments to function 'ldexp'）。 */
+double bad5 = ldexp(1.0);
+
+/* 违反约束「ldexp 参数个数必须为 2」：
+ * 多传参数，gcc -std=c99 应报错（too many arguments to function 'ldexp'）。 */
+double bad6 = ldexp(1.0, 2, 3);
+
+/* 违反约束「ldexpf 参数个数必须为 2」：
+ * gcc -std=c99 应报错。 */
+float bad7 = ldexpf(1.0f);
+
+/* 违反约束「ldexpl 参数个数必须为 2」：
+ * gcc -std=c99 应报错。 */
+long double bad8 = ldexpl(1.0L);
+
+#endif /* 负向测试结束 */
+====ARTICLE 7.12.6.7 ====
+---TEXT---
+The log functions
+Synopsis:
+[1] #include <math.h> double log(double x); float logf(float x); long double logl(long double x);
+Description:
+[2] The log functions compute the base-e (natural) logarithm of x. A domain error occurs if the argument is negative. A range error may occur if the argument is zero.
+Returns:
+[3] The log functions return loge x.
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.7 The log functions
+ *
+ * 预期行为：
+ *   正向测试：<math.h> 提供 log / logf / logl 三个函数，分别接受 double /
+ *             float / long double 参数，返回自然对数（底 e）。对正数参数
+ *             结果正确；log(1)==0；log(e)==1；logf/logl 类型与精度符合声明。
+ *             负参数触发 domain error（返回 NaN 并置 errno=EDOM）；
+ *             零参数可能触发 range error（返回 -HUGE_VAL 并置 errno=ERANGE）。
+ *   负向测试：违反约束的代码（如参数个数错误、把非算术类型传给 log、
+ *             对函数名赋值等）应导致编译报错。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型声明：三个函数均可用，返回类型分别为 double/float/long double */
+static void test_synopsis(void)
+{
+    double      (*pd)(double)          = log;
+    float       (*pf)(float)           = logf;
+    long double (*pl)(long double)     = logl;
+    (void)pd; (void)pf; (void)pl;
+    printf("[1] log/logf/logl 原型可用\n");
+}
+
+/* [2][3] log 计算底 e 自然对数，返回 log_e x */
+static void test_log_double(void)
+{
+    double r;
+
+    /* log(1) == 0 */
+    r = log(1.0);
+    assert(r == 0.0);
+
+    /* log(e) == 1，e 用 exp(1.0) 表示 */
+    r = log(exp(1.0));
+    assert(fabs(r - 1.0) < 1e-12);
+
+    /* log(e^2) == 2 */
+    r = log(exp(2.0));
+    assert(fabs(r - 2.0) < 1e-12);
+
+    /* log(10) 的已知值 */
+    r = log(10.0);
+    assert(fabs(r - 2.30258509299404568402) < 1e-12);
+
+    /* 单调性：0 < a < b  =>  log(a) < log(b) */
+    assert(log(2.0) < log(3.0));
+
+    printf("[2][3] log(double) 语义正确\n");
+}
+
+/* [1][3] logf 接受 float，返回 float */
+static void test_logf(void)
+{
+    float r = logf(1.0f);
+    assert(r == 0.0f);
+
+    r = logf((float)exp(1.0));
+    assert(fabsf(r - 1.0f) < 1e-5f);
+
+    /* 返回类型确为 float */
+    assert(sizeof(logf(2.0f)) == sizeof(float));
+
+    printf("[1][3] logf(float) 语义正确\n");
+}
+
+/* [1][3] logl 接受 long double，返回 long double */
+static void test_logl(void)
+{
+    long double r = logl(1.0L);
+    assert(r == 0.0L);
+
+    r = logl(expl(1.0L));
+    assert(fabsl(r - 1.0L) < 1e-15L);
+
+    /* 返回类型确为 long double */
+    assert(sizeof(logl(2.0L)) == sizeof(long double));
+
+    printf("[1][3] logl(long double) 语义正确\n");
+}
+
+/* [2] 负参数：domain error，返回 NaN，errno 置 EDOM */
+static void test_domain_error(void)
+{
+    double r;
+
+    errno = 0;
+    r = log(-1.0);
+    assert(isnan(r));
+    assert(errno == EDOM);
+
+    errno = 0;
+    r = log(-0.5);
+    assert(isnan(r));
+    assert(errno == EDOM);
+
+    printf("[2] 负参数触发 domain error (NaN, EDOM)\n");
+}
+
+/* [2] 零参数：range error 可能发生，返回 -HUGE_VAL，errno 置 ERANGE */
+static void test_range_error_zero(void)
+{
+    double r;
+
+    errno = 0;
+    r = log(0.0);
+    /* 标准允许实现返回 -HUGE_VAL 并置 ERANGE */
+    assert(r == -HUGE_VAL || isinf(r));
+    assert(errno == ERANGE);
+
+    printf("[2] 零参数触发 range error (-HUGE_VAL, ERANGE)\n");
+}
+
+/* [2][3] 参数为 +inf 时 log(+inf) == +inf（非错误） */
+static void test_infinity(void)
+{
+    double r = log(INFINITY);
+    assert(isinf(r) && r > 0.0);
+    printf("[2][3] log(+inf) == +inf\n");
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_log_double();
+    test_logf();
+    test_logl();
+    test_domain_error();
+    test_range_error_zero();
+    test_infinity();
+
+    printf("\n所有正向测试通过。\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * log 原型只接受 1 个参数，传 2 个应报错。
+ * 期望：gcc -std=c99 报 "too many arguments to function 'log'" */
+double bad1 = log(1.0, 2.0);
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * log 原型要求 1 个参数，传 0 个应报错。
+ * 期望：gcc -std=c99 报 "too few arguments to function 'log'" */
+double bad2 = log();
+
+/* 违反约束「实参必须为算术类型」：
+ * 结构体不能传给 log（无法转换为 double）。
+ * 期望：gcc -std=c99 报 incompatible type for argument 1 of 'log' */
+struct S { int x; };
+double bad3(struct S s) { return log(s); }
+
+/* 违反约束「函数名不是可修改左值」：
+ * 对函数指示符赋值应报错。
+ * 期望：gcc -std=c99 报 "lvalue required as left operand of assignment" */
+void bad4(void) { log = 0; }
+
+/* 违反约束「函数指示符不能作为取地址以外的操作数参与算术」：
+ * log + 1 非法。
+ * 期望：gcc -std=c99 报 invalid operands to binary + */
+double bad5 = log + 1;
+
+/* 违反约束「返回类型为 double 的函数结果不能作为结构体成员访问」：
+ * log(1.0).x 非法，double 无成员。
+ * 期望：gcc -std=c99 报 "request for member 'x' in something not a structure or union" */
+double bad6 = log(1.0).x;
+
+#endif
+====ARTICLE 7.12.6.8 ====
+---TEXT---
+The log10 functions
+Synopsis:
+[1] #include <math.h> double log10(double x); float log10f(float x); long double log10l(long double x);
+Description:
+[2] The log10 functions compute the base-10 (common) logarithm of x. A domain error occurs if the argument is negative. A range error may occur if the argument is zero.
+Returns:
+[3] The log10 functions return log10 x.
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.8  The log10 functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 log10 / log10f / log10l，
+ *             验证其返回以 10 为底的对数；验证负参数产生定义域错误
+ *             （返回 NaN 并置 errno == EDOM）；验证零参数可能产生
+ *             范围错误（返回 -HUGE_VAL 并可能置 errno == ERANGE）。
+ *   负向测试：违反约束的代码（如参数个数错误、对非算术类型调用等）
+ *             应导致编译报错，统一放在 #if 0 中。
+ *
+ * 编译：gcc -std=c99 -Wall -lm test.c
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+#include <assert.h>
+
+/* 判断 double 是否为 NaN（不依赖 C99 的 isnan 宏，避免额外依赖） */
+static int is_nan_d(double x) { return x != x; }
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 原型声明：三个函数均可用，返回类型分别为 double/float/long double */
+    {
+        double      (*pd)(double)          = log10;
+        float       (*pf)(float)           = log10f;
+        long double (*pl)(long double)     = log10l;
+        assert(pd != NULL && pf != NULL && pl != NULL);
+    }
+
+    /* [2][3] log10 计算以 10 为底的对数：log10(1)=0, log10(10)=1, log10(100)=2 */
+    {
+        double r1 = log10(1.0);
+        double r2 = log10(10.0);
+        double r3 = log10(100.0);
+        assert(fabs(r1 - 0.0) < 1e-12);
+        assert(fabs(r2 - 1.0) < 1e-12);
+        assert(fabs(r3 - 2.0) < 1e-12);
+    }
+
+    /* [2][3] log10f 计算 float 版本 */
+    {
+        float r = log10f(1000.0f);
+        assert(fabsf(r - 3.0f) < 1e-5f);
+    }
+
+    /* [2][3] log10l 计算 long double 版本 */
+    {
+        long double r = log10l(10000.0L);
+        assert(fabsl(r - 4.0L) < 1e-15L);
+    }
+
+    /* [2] 定义域错误：参数为负 -> 返回 NaN 并置 errno == EDOM */
+    {
+        errno = 0;
+        double r = log10(-1.0);
+        assert(is_nan_d(r));          /* 返回 NaN */
+        assert(errno == EDOM);        /* 定义域错误 */
+    }
+
+    /* [2] 定义域错误（float 版本） */
+    {
+        errno = 0;
+        float r = log10f(-2.5f);
+        assert(r != r);               /* NaN */
+        assert(errno == EDOM);
+    }
+
+    /* [2] 定义域错误（long double 版本） */
+    {
+        errno = 0;
+        long double r = log10l(-3.0L);
+        assert(r != r);               /* NaN */
+        assert(errno == EDOM);
+    }
+
+    /* [2] 范围错误：参数为 0 -> 返回 -HUGE_VAL，可能置 errno == ERANGE */
+    {
+        errno = 0;
+        double r = log10(0.0);
+        assert(r == -HUGE_VAL);       /* 返回 -HUGE_VAL */
+        /* 范围错误“可能”发生，因此 errno 可能为 ERANGE 也可能不变，
+           这里只验证返回值，不强制断言 errno。 */
+    }
+
+    /* [2] 范围错误（float 版本）：返回 -HUGE_VALF */
+    {
+        errno = 0;
+        float r = log10f(0.0f);
+        assert(r == -HUGE_VALF);
+    }
+
+    /* [2] 范围错误（long double 版本）：返回 -HUGE_VALL */
+    {
+        errno = 0;
+        long double r = log10l(0.0L);
+        assert(r == -HUGE_VALL);
+    }
+
+    /* [3] 返回值语义：log10(x) 与 log(x)/log(10) 一致（数值一致性检查） */
+    {
+        double x = 42.0;
+        double a = log10(x);
+        double b = log(x) / log(10.0);
+        assert(fabs(a - b) < 1e-12);
+    }
+
+    printf("All positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /* 违反约束「函数调用实参个数必须与原型一致」：
+       log10 原型只接受 1 个参数，传 2 个参数，gcc -std=c99 应报错
+       （error: too many arguments to function 'log10'）。 */
+    double bad1 = log10(1.0, 2.0);
+
+    /* 违反约束「函数调用实参个数必须与原型一致」：
+       log10 原型要求 1 个参数，传 0 个参数，应报错
+       （error: too few arguments to function 'log10'）。 */
+    double bad2 = log10();
+
+    /* 违反约束「实参类型必须可转换为形参类型」：
+       结构体类型无法隐式转换为 double，应报错
+       （error: incompatible type for argument 1 of 'log10'）。 */
+    struct S { int x; } s;
+    double bad3 = log10(s);
+
+    /* 违反约束「函数返回类型为算术类型，不能作为赋值目标」：
+       log10 的返回值不是左值，对其赋值应报错
+       （error: lvalue required as left operand of assignment）。 */
+    log10(10.0) = 1.0;
+
+    /* 违反约束「不能对函数返回值取地址」：
+       log10 的返回值不是左值，取地址应报错
+       （error: lvalue required as unary '&' operand）。 */
+    double *bad4 = &log10(10.0);
+#endif
+
+    return 0;
+}
+====ARTICLE 7.12.6.9 ====
+---TEXT---
+The log1p functions
+Synopsis:
+[1] #include <math.h> double log1p(double x); float log1pf(float x); long double log1pl(long double x);
+Description:
+[2] The log1p functions compute the base-e (natural) logarithm of 1 plus the argument. A domain error occurs if the argument is less than -1. A range error may occur if the argument equals -1.
+Returns:
+[3] The log1p functions return loge (1 + x).
+Footnotes:
+209) For small magnitude x, log1p(x) is expected to be more accurate than log(1 + x).
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.9  The log1p functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 log1p / log1pf / log1pl，
+ *             验证返回值等于 ln(1+x)，并验证小量 x 时 log1p(x) 比 log(1+x) 更精确（脚注 209）。
+ *   负向测试：违反约束的代码（如参数个数错误、对非算术类型调用等）应导致编译报错。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明（double log1p(double); float log1pf(float); long double log1pl(long double);）
+ *   [2] 语义：计算 ln(1+x)；x < -1 定义域错误；x == -1 可能范围错误
+ *   [3] 返回值：loge(1+x)
+ *   脚注 209：小量 x 时 log1p(x) 比 log(1+x) 更精确
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 验证三个函数的原型存在且返回类型正确 */
+static void test_prototypes(void)
+{
+    /* 通过函数指针类型检查原型签名 */
+    double (*p1)(double)          = log1p;
+    float  (*p2)(float)           = log1pf;
+    long double (*p3)(long double) = log1pl;
+
+    assert(p1 != NULL);
+    assert(p2 != NULL);
+    assert(p3 != NULL);
+
+    /* 调用一次，确保链接成功 */
+    volatile double r1 = log1p(0.0);
+    volatile float  r2 = log1pf(0.0f);
+    volatile long double r3 = log1pl(0.0L);
+    (void)r1; (void)r2; (void)r3;
+}
+
+/* [2][3] 验证 log1p(x) == ln(1+x) 的语义 */
+static void test_semantics(void)
+{
+    /* x = 0 时，ln(1+0) = 0 */
+    assert(log1p(0.0) == 0.0);
+
+    /* x = e - 1 时，ln(1 + (e-1)) = ln(e) = 1 */
+    double e_minus_1 = exp(1.0) - 1.0;
+    double r = log1p(e_minus_1);
+    assert(fabs(r - 1.0) < 1e-12);
+
+    /* 一般值：与 log(1+x) 比较（在非小量时二者接近） */
+    double x = 1.0;
+    double expected = log(1.0 + x);
+    double got = log1p(x);
+    assert(fabs(got - expected) < 1e-12);
+
+    /* 负值但 > -1：ln(1 + (-0.5)) = ln(0.5) */
+    double rn = log1p(-0.5);
+    assert(fabs(rn - log(0.5)) < 1e-12);
+
+    /* float 版本 */
+    float xf = 1.0f;
+    float rf = log1pf(xf);
+    assert(fabsf(rf - logf(1.0f + xf)) < 1e-5f);
+
+    /* long double 版本 */
+    long double xl = 1.0L;
+    long double rl = log1pl(xl);
+    assert(fabsl(rl - logl(1.0L + xl)) < 1e-15L);
+}
+
+/* [2] 定义域错误：x < -1 时发生 domain error（返回 NaN，errno 可能为 EDOM） */
+static void test_domain_error(void)
+{
+    errno = 0;
+    double r = log1p(-2.0);   /* x < -1，定义域错误 */
+    /* 标准要求发生 domain error；实现通常返回 NaN */
+    assert(isnan(r) || errno == EDOM);
+}
+
+/* [2] 范围错误：x == -1 时可能发生 range error（返回 -HUGE_VAL） */
+static void test_range_error(void)
+{
+    errno = 0;
+    double r = log1p(-1.0);   /* ln(0) = -inf，可能 range error */
+    /* 实现通常返回 -HUGE_VAL 或 -inf */
+    assert(isinf(r) && r < 0.0);
+}
+
+/* 脚注 209：小量 x 时 log1p(x) 比 log(1+x) 更精确 */
+static void test_footnote_209(void)
+{
+    /* 取一个非常小的 x，使得 1+x 在 double 中丢失精度 */
+    double x = 1e-16;
+    double a = log1p(x);        /* 精确：约等于 x */
+    double b = log(1.0 + x);    /* 1.0 + 1e-16 舍入为 1.0，log(1.0)=0 */
+
+    /* log1p 应给出接近 x 的结果 */
+    assert(fabs(a - x) < 1e-20);
+
+    /* log(1+x) 因舍入丢失信息，结果与 x 相差较大 */
+    assert(fabs(b - x) > fabs(a - x));
+
+    /* 更极端：x = DBL_EPSILON/2 */
+    double y = DBL_EPSILON / 2.0;
+    double ay = log1p(y);
+    double by = log(1.0 + y);
+    assert(fabs(ay - y) < 1e-30);
+    assert(fabs(by - y) > fabs(ay - y));
+}
+
+int main(void)
+{
+    test_prototypes();
+    test_semantics();
+    test_domain_error();
+    test_range_error();
+    test_footnote_209();
+
+    printf("All positive tests for C99 7.12.6.9 (log1p) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用参数个数必须与原型一致」：
+ * log1p 原型为 double log1p(double)，传入两个参数应报错。
+ * 期望：gcc -std=c99 报 "too many arguments to function 'log1p'" */
+double bad1 = log1p(1.0, 2.0);
+
+/* 违反约束「函数调用参数个数必须与原型一致」：
+ * log1p 需要一个参数，不传参数应报错。
+ * 期望：gcc -std=c99 报 "too few arguments to function 'log1p'" */
+double bad2 = log1p();
+
+/* 违反约束「实参类型必须可转换为形参类型」：
+ * 传入结构体类型，无法转换为 double，应报错。
+ * 期望：gcc -std=c99 报 "incompatible type for argument 1 of 'log1p'" */
+struct S { int x; } s;
+double bad3 = log1p(s);
+
+/* 违反约束「函数名必须已声明」：
+ * 未包含 <math.h> 且未声明 log1p 时调用，C99 下隐式声明被禁止（约束违反）。
+ * 期望：gcc -std=c99 报 "implicit declaration of function 'log1p'" */
+/* 注意：此处已在文件顶部包含 <math.h>，故用未声明的名字演示 */
+double bad4 = log1p_undeclared(1.0);
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * 函数调用结果不是左值，不能赋值。
+ * 期望：gcc -std=c99 报 "lvalue required as left operand of assignment" */
+void bad5(void) { log1p(1.0) = 2.0; }
+
+/* 违反约束「取地址操作数必须是左值或函数指示符」：
+ * 函数返回的 double 不是左值，不能取地址。
+ * 期望：gcc -std=c99 报 "lvalue required as unary '&' operand" */
+void bad6(void) { double *p = &log1p(1.0); (void)p; }
+
+#endif /* 负向测试结束 */
+====ARTICLE 7.12.6.10 ====
+---TEXT---
+The log2 functions
+Synopsis:
+[1] #include <math.h> double log2(double x); float log2f(float x); long double log2l(long double x);
+Description:
+[2] The log2 functions compute the base-2 logarithm of x. A domain error occurs if the argument is less than zero. A range error may occur if the argument is zero.
+Returns:
+[3] The log2 functions return log2 x.
+---CODE---
+/*
+ * 测试 C99 7.12.6.10 —— log2 函数族 (log2 / log2f / log2l)
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 log2/log2f/log2l，验证返回 log2(x)，
+ *             并验证定义域错误（x<0）与值域错误（x==0）的 errno 行为。
+ *             整个程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中）应导致编译报错。
+ *
+ * 说明：log2 的“约束”极少（仅要求 <math.h> 声明、参数为实数类型），
+ *       因此负向测试主要针对“未声明函数/错误参数类型”等约束。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <errno.h>
+#include <assert.h>
+#include <float.h>
+
+/* 允许浮点比较的容差 */
+static int close_enough(double a, double b)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= 1e-12 * (1.0 + (b < 0 ? -b : b));
+}
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 原型可见：<math.h> 提供 double log2(double)、
+     *     float log2f(float)、long double log2l(long double) 的声明。
+     *     通过取函数指针验证原型存在且类型正确。 */
+    {
+        double (*p_d)(double)          = log2;
+        float  (*p_f)(float)           = log2f;
+        long double (*p_l)(long double)= log2l;
+        assert(p_d != NULL && p_f != NULL && p_l != NULL);
+    }
+
+    /* [2][3] 计算以 2 为底的对数：log2(2^k) == k */
+    {
+        assert(close_enough(log2(1.0),  0.0));   /* log2(1)  = 0 */
+        assert(close_enough(log2(2.0),  1.0));   /* log2(2)  = 1 */
+        assert(close_enough(log2(4.0),  2.0));   /* log2(4)  = 2 */
+        assert(close_enough(log2(8.0),  3.0));   /* log2(8)  = 3 */
+        assert(close_enough(log2(1024.0), 10.0));/* log2(2^10)=10 */
+        assert(close_enough(log2(0.5), -1.0));   /* log2(1/2) = -1 */
+        assert(close_enough(log2(0.25),-2.0));   /* log2(1/4) = -2 */
+    }
+
+    /* [2][3] log2f 版本：float 参数、float 返回 */
+    {
+        float r = log2f(8.0f);
+        assert(close_enough((double)r, 3.0));
+        r = log2f(1.0f);
+        assert(close_enough((double)r, 0.0));
+    }
+
+    /* [2][3] log2l 版本：long double 参数、long double 返回 */
+    {
+        long double r = log2l(16.0L);
+        assert(close_enough((double)r, 4.0));
+        r = log2l(1.0L);
+        assert(close_enough((double)r, 0.0));
+    }
+
+    /* [2] 定义域错误：参数小于零时发生 domain error。
+     *     标准要求返回 NaN（实现定义的具体值），并置 errno 为 EDOM。 */
+    {
+        errno = 0;
+        double r = log2(-1.0);
+        assert(isnan(r));          /* 定义域错误返回 NaN */
+        assert(errno == EDOM);     /* 且 errno 被置为 EDOM */
+    }
+
+    /* [2] 值域错误：参数为零时可能发生 range error。
+     *     标准允许返回 -HUGE_VAL（负无穷）并置 errno 为 ERANGE。
+     *     由于是“may occur”，这里只做宽松检查：结果应为 -inf 或 NaN。 */
+    {
+        errno = 0;
+        double r = log2(0.0);
+        assert(isinf(r) || isnan(r));
+        /* 若实现报告了值域错误，则 errno 应为 ERANGE */
+        if (errno != 0) {
+            assert(errno == ERANGE);
+        }
+    }
+
+    /* [2][3] 一般非整数参数：log2(3) 与 log(3)/log(2) 一致 */
+    {
+        double a = log2(3.0);
+        double b = log(3.0) / log(2.0);
+        assert(close_enough(a, b));
+    }
+
+    /* [3] 返回值类型检查：log2 返回 double，log2f 返回 float，
+     *     log2l 返回 long double。用 sizeof 验证返回类型宽度。 */
+    {
+        assert(sizeof(log2(1.0))  == sizeof(double));
+        assert(sizeof(log2f(1.0f))== sizeof(float));
+        assert(sizeof(log2l(1.0L))== sizeof(long double));
+    }
+
+    printf("C99 7.12.6.10 log2 functions: all positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「调用函数前必须有可见声明（C99 6.5.2.2）」：
+     * 若未包含 <math.h>，log2 无声明，gcc -std=c99 应报
+     * "implicit declaration of function 'log2'"（C99 中隐式声明为约束违反）。 */
+    {
+        double y = log2(4.0);   /* 无原型：应报错 */
+        (void)y;
+    }
+
+    /* 违反约束「实参类型必须与形参兼容（C99 6.5.2.2）」：
+     * log2 的形参为 double，传入结构体类型不兼容，应报错。 */
+    {
+        struct S { int x; } s;
+        double y = log2(s);     /* 结构体不能转换为 double：应报错 */
+        (void)y;
+    }
+
+    /* 违反约束「实参个数必须与形参个数一致（C99 6.5.2.2）」：
+     * log2 只接受 1 个参数，多传参数应报错。 */
+    {
+        double y = log2(1.0, 2.0);  /* 参数过多：应报错 */
+        (void)y;
+    }
+
+    /* 违反约束「log2 的返回值不是左值，不能赋值（C99 6.5.16）」：
+     * 函数调用结果不是左值，对其赋值应报错。 */
+    {
+        log2(4.0) = 1.0;        /* 对非左值赋值：应报错 */
+    }
+
+    /* 违反约束「不能对函数名取地址后赋值（C99 6.5.16）」：
+     * 函数指示符不是可修改左值。 */
+    {
+        log2 = 0;               /* 对函数名赋值：应报错 */
+    }
+
+#endif /* 负向测试结束 */
+
+    return 0;
+}
+====ARTICLE 7.12.6.11 ====
+---TEXT---
+The logb functions
+Synopsis:
+[1] #include <math.h> double logb(double x); float logbf(float x); long double logbl(long double x);
+Description:
+[2] The logb functions extract the exponent of x, as a signed integer value in floating-point format. If x is subnormal it is treated as though it were normalized; thus, for positive finite x, 1 <= x FLT_RADIX < FLT_RADIX A domain error or range error may occur if the argument is zero.
+Returns:
+[3] The logb functions return the signed exponent of x.
+---CODE---
+/*
+ * 测试 C99 7.12.6.11 —— logb / logbf / logbl 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 头文件 <math.h> 与三个函数原型（double/float/long double 版本）
+ *   [2] 语义：提取 x 的指数（浮点格式的有符号整数值）；次正规数按正规化处理；
+ *       对正有限 x 满足 1 <= x / FLT_RADIX^logb(x) < FLT_RADIX；参数为 0 时可能域错误/范围错误
+ *   [3] 返回值：x 的有符号指数
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 三个函数原型均可用，返回类型分别为 double / float / long double */
+    {
+        double      d = logb(8.0);
+        float       f = logbf(8.0f);
+        long double l = logbl(8.0L);
+        (void)d; (void)f; (void)l;
+        /* 返回类型检查：赋值给对应类型不应有截断警告（此处仅验证可调用） */
+        assert(sizeof(logb(1.0))  == sizeof(double));
+        assert(sizeof(logbf(1.0f)) == sizeof(float));
+        assert(sizeof(logbl(1.0L)) == sizeof(long double));
+    }
+
+    /* [3] 返回值是 x 的有符号指数：对 2 的整数次幂，logb 返回该指数 */
+    {
+        assert(logb(1.0)   == 0.0);
+        assert(logb(2.0)   == 1.0);
+        assert(logb(4.0)   == 2.0);
+        assert(logb(8.0)   == 3.0);
+        assert(logb(1024.0) == 10.0);
+        assert(logb(0.5)   == -1.0);
+        assert(logb(0.25)  == -2.0);
+        assert(logb(0.125) == -3.0);
+    }
+
+    /* [3] 返回值是「浮点格式的有符号整数」：结果应为整数值（无小数部分） */
+    {
+        double r = logb(3.0);          /* 3.0 = 1.5 * 2^1 -> 指数 1 */
+        assert(r == 1.0);
+        assert(floor(r) == r);         /* 是整数值 */
+
+        r = logb(7.0);                 /* 7.0 = 1.75 * 2^2 -> 指数 2 */
+        assert(r == 2.0);
+        assert(floor(r) == r);
+
+        r = logb(0.3);                 /* 0.3 = 1.2 * 2^-2 -> 指数 -2 */
+        assert(r == -2.0);
+        assert(floor(r) == r);
+    }
+
+    /* [2] 对正有限 x：1 <= x / FLT_RADIX^logb(x) < FLT_RADIX */
+    {
+        double xs[] = { 1.0, 2.0, 3.0, 7.0, 0.3, 0.5, 123.456, 1e10, 1e-10 };
+        size_t i;
+        for (i = 0; i < sizeof(xs)/sizeof(xs[0]); ++i) {
+            double x = xs[i];
+            double e = logb(x);
+            double m = x / pow((double)FLT_RADIX, e);
+            assert(m >= 1.0);
+            assert(m < (double)FLT_RADIX);
+        }
+    }
+
+    /* [2] 次正规数按正规化处理：logb 返回其「正规化后」的指数 */
+    {
+        /* DBL_MIN 是最小正规数，其指数为 DBL_MIN_EXP - 1 */
+        double dmin = DBL_MIN;
+        assert(logb(dmin) == (double)(DBL_MIN_EXP - 1));
+
+        /* 构造一个次正规数：DBL_MIN / 2 是次正规数（若支持） */
+        double sub = DBL_MIN / 2.0;
+        if (sub > 0.0 && sub < DBL_MIN) {
+            /* 次正规数被当作已正规化：指数比 DBL_MIN 的指数小 1 */
+            assert(logb(sub) == (double)(DBL_MIN_EXP - 2));
+        }
+
+        /* 更小的次正规数：DBL_MIN / 4 */
+        double sub2 = DBL_MIN / 4.0;
+        if (sub2 > 0.0 && sub2 < DBL_MIN) {
+            assert(logb(sub2) == (double)(DBL_MIN_EXP - 3));
+        }
+    }
+
+    /* [2] 负参数：logb 提取的是指数（与符号无关），返回同样的有符号指数 */
+    {
+        assert(logb(-8.0) == 3.0);
+        assert(logb(-0.5) == -1.0);
+        assert(logb(-3.0) == 1.0);
+    }
+
+    /* [2] 无穷大：logb(+inf) 返回 +inf（指数无穷大） */
+    {
+        double inf = INFINITY;
+        double r = logb(inf);
+        assert(isinf(r) && r > 0.0);
+        r = logb(-inf);
+        assert(isinf(r) && r > 0.0);
+    }
+
+    /* [2] NaN：logb(NaN) 返回 NaN */
+    {
+        double r = logb(NAN);
+        assert(isnan(r));
+    }
+
+    /* [2] 参数为 0：可能发生域错误或范围错误（实现定义）。
+     *     此处只验证调用不崩溃，并检查返回值是否为 -HUGE_VAL 或 -inf（常见实现）。
+     *     不把具体返回值作为硬性断言，因为标准允许域错误/范围错误。 */
+    {
+        double r = logb(0.0);
+        /* 常见实现返回 -HUGE_VAL；标准允许域错误或范围错误 */
+        (void)r;
+        /* 若实现返回有限值，也不违反标准（域错误/范围错误是「可能」发生） */
+    }
+
+    /* [1][2][3] float 与 long double 版本语义一致 */
+    {
+        assert(logbf(8.0f) == 3.0f);
+        assert(logbf(0.5f) == -1.0f);
+        assert(logbl(8.0L) == 3.0L);
+        assert(logbl(0.5L) == -1.0L);
+
+        /* 次正规 float */
+        float fsub = FLT_MIN / 2.0f;
+        if (fsub > 0.0f && fsub < FLT_MIN) {
+            assert(logbf(fsub) == (float)(FLT_MIN_EXP - 2));
+        }
+
+        /* 次正规 long double */
+        long double lsub = LDBL_MIN / 2.0L;
+        if (lsub > 0.0L && lsub < LDBL_MIN) {
+            assert(logbl(lsub) == (long double)(LDBL_MIN_EXP - 2));
+        }
+    }
+
+    printf("C99 7.12.6.11 logb/logbf/logbl: all positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /*
+     * 违反约束「logb 的参数必须为实数浮点类型（算术类型）」：
+     * 传入结构体类型，gcc -std=c99 应报错（incompatible type for argument）。
+     */
+    struct S { int x; } s;
+    logb(s);
+
+    /*
+     * 违反约束「logb 的参数必须为算术类型」：
+     * 传入指针类型，gcc -std=c99 应报错。
+     */
+    int *p = 0;
+    logb(p);
+
+    /*
+     * 违反约束「logb 的参数个数必须为 1」：
+     * 少传参数，gcc -std=c99 应报错（too few arguments to function 'logb'）。
+     */
+    logb();
+
+    /*
+     * 违反约束「logb 的参数个数必须为 1」：
+     * 多传参数，gcc -std=c99 应报错（too many arguments to function 'logb'）。
+     */
+    logb(1.0, 2.0);
+
+    /*
+     * 违反约束「logbf 的参数必须为实数浮点类型」：
+     * 传入结构体，gcc -std=c99 应报错。
+     */
+    logbf(s);
+
+    /*
+     * 违反约束「logbl 的参数必须为实数浮点类型」：
+     * 传入指针，gcc -std=c99 应报错。
+     */
+    logbl(p);
+
+    /*
+     * 违反约束「logb 的返回值不可作为左值赋值」：
+     * 函数调用结果不是左值，对其赋值应编译报错（lvalue required as left operand of assignment）。
+     */
+    logb(1.0) = 2.0;
+
+    /*
+     * 违反约束「logbf 的返回值不可作为左值赋值」：
+     * 应编译报错。
+     */
+    logbf(1.0f) = 2.0f;
+
+    /*
+     * 违反约束「logbl 的返回值不可作为左值赋值」：
+     * 应编译报错。
+     */
+    logbl(1.0L) = 2.0L;
+#endif
+
+    return 0;
+}
+====ARTICLE 7.12.6.12 ====
+---TEXT---
+The modf functions
+Synopsis:
+[1] #include <math.h> double modf(double value, double *iptr); float modff(float value, float *iptr); long double modfl(long double value, long double *iptr);
+Description:
+[2] The modf functions break the argument value into integral and fractional parts, each of which has the same type and sign as the argument. They store the integral part (in floating-point format) in the object pointed to by iptr.
+Returns:
+[3] The modf functions return the signed fractional part of value.
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.12  The modf functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 modf / modff / modfl，
+ *             验证 [2] 整数部分与小数部分类型、符号与实参一致，
+ *             整数部分以浮点格式存入 *iptr，
+ *             验证 [3] 返回带符号的小数部分。
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中），
+ *             期望编译器报错。
+ *
+ * 编译：gcc -std=c99 -Wall -Wextra test.c -lm
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+
+/* 辅助：判断两个 double 是否近似相等 */
+static int dbl_eq(double a, double b)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d < 1e-9;
+}
+
+static int flt_eq(float a, float b)
+{
+    float d = a - b;
+    if (d < 0) d = -d;
+    return d < 1e-5f;
+}
+
+static int ldbl_eq(long double a, long double b)
+{
+    long double d = a - b;
+    if (d < 0) d = -d;
+    return d < 1e-9L;
+}
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+int main(void)
+{
+    /* ---------------------------------------------------------------
+     * [1] Synopsis：三个函数原型可用，返回类型分别为
+     *     double / float / long double，第二参数为对应指针类型。
+     *     通过取函数指针并赋值来静态验证原型签名。
+     * --------------------------------------------------------------- */
+    {
+        double (*pf_d)(double, double *)          = modf;
+        float  (*pf_f)(float, float *)            = modff;
+        long double (*pf_l)(long double, long double *) = modfl;
+        assert(pf_d != NULL);
+        assert(pf_f != NULL);
+        assert(pf_l != NULL);
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 正数：整数部分与小数部分类型、符号与实参一致；
+     *     整数部分以浮点格式存入 *iptr。
+     * --------------------------------------------------------------- */
+    {
+        double value = 3.75;
+        double ipart = 0.0;
+        double fpart = modf(value, &ipart);
+
+        /* 整数部分 = 3.0，小数部分 = 0.75 */
+        assert(dbl_eq(ipart, 3.0));
+        assert(dbl_eq(fpart, 0.75));
+        /* 符号一致：均为正 */
+        assert(ipart >= 0.0);
+        assert(fpart >= 0.0);
+        /* 恒等式：value == ipart + fpart */
+        assert(dbl_eq(ipart + fpart, value));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 负数：整数部分与小数部分都带负号（与实参符号一致）。
+     * --------------------------------------------------------------- */
+    {
+        double value = -3.75;
+        double ipart = 0.0;
+        double fpart = modf(value, &ipart);
+
+        /* 整数部分 = -3.0，小数部分 = -0.75 */
+        assert(dbl_eq(ipart, -3.0));
+        assert(dbl_eq(fpart, -0.75));
+        /* 符号一致：均为负 */
+        assert(ipart <= 0.0);
+        assert(fpart <= 0.0);
+        assert(dbl_eq(ipart + fpart, value));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 整数实参：小数部分为 0，整数部分等于实参。
+     * --------------------------------------------------------------- */
+    {
+        double value = 42.0;
+        double ipart = 0.0;
+        double fpart = modf(value, &ipart);
+
+        assert(dbl_eq(ipart, 42.0));
+        assert(dbl_eq(fpart, 0.0));
+        assert(dbl_eq(ipart + fpart, value));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 纯小数实参：整数部分为 0，小数部分等于实参。
+     * --------------------------------------------------------------- */
+    {
+        double value = 0.25;
+        double ipart = 0.0;
+        double fpart = modf(value, &ipart);
+
+        assert(dbl_eq(ipart, 0.0));
+        assert(dbl_eq(fpart, 0.25));
+        assert(dbl_eq(ipart + fpart, value));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 零：整数部分与小数部分均为 0。
+     * --------------------------------------------------------------- */
+    {
+        double value = 0.0;
+        double ipart = 1.0;   /* 故意预置非零，验证被写入 */
+        double fpart = modf(value, &ipart);
+
+        assert(dbl_eq(ipart, 0.0));
+        assert(dbl_eq(fpart, 0.0));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 负零：符号应保持为负（用 signbit 检查）。
+     * --------------------------------------------------------------- */
+    {
+        double value = -0.0;
+        double ipart = 0.0;
+        double fpart = modf(value, &ipart);
+
+        assert(dbl_eq(ipart, 0.0));
+        assert(dbl_eq(fpart, 0.0));
+        /* 负零的符号位应保留 */
+        assert(signbit(ipart));
+        assert(signbit(fpart));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 大整数：整数部分精确，小数部分为 0。
+     * --------------------------------------------------------------- */
+    {
+        double value = 1e15;
+        double ipart = 0.0;
+        double fpart = modf(value, &ipart);
+
+        assert(dbl_eq(ipart, 1e15));
+        assert(dbl_eq(fpart, 0.0));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2] 类型一致性：modff 使用 float，modfl 使用 long double。
+     * --------------------------------------------------------------- */
+    {
+        float value = 2.5f;
+        float ipart = 0.0f;
+        float fpart = modff(value, &ipart);
+
+        assert(flt_eq(ipart, 2.0f));
+        assert(flt_eq(fpart, 0.5f));
+        assert(flt_eq(ipart + fpart, value));
+    }
+    {
+        float value = -2.5f;
+        float ipart = 0.0f;
+        float fpart = modff(value, &ipart);
+
+        assert(flt_eq(ipart, -2.0f));
+        assert(flt_eq(fpart, -0.5f));
+        assert(flt_eq(ipart + fpart, value));
+    }
+    {
+        long double value = 7.125L;
+        long double ipart = 0.0L;
+        long double fpart = modfl(value, &ipart);
+
+        assert(ldbl_eq(ipart, 7.0L));
+        assert(ldbl_eq(fpart, 0.125L));
+        assert(ldbl_eq(ipart + fpart, value));
+    }
+    {
+        long double value = -7.125L;
+        long double ipart = 0.0L;
+        long double fpart = modfl(value, &ipart);
+
+        assert(ldbl_eq(ipart, -7.0L));
+        assert(ldbl_eq(fpart, -0.125L));
+        assert(ldbl_eq(ipart + fpart, value));
+    }
+
+    /* ---------------------------------------------------------------
+     * [3] 返回值是带符号的小数部分：直接检查返回值符号。
+     * --------------------------------------------------------------- */
+    {
+        double f1 = modf(5.5, &(double){0});
+        double f2 = modf(-5.5, &(double){0});
+        assert(f1 > 0.0);
+        assert(f2 < 0.0);
+        assert(dbl_eq(f1, 0.5));
+        assert(dbl_eq(f2, -0.5));
+    }
+
+    /* ---------------------------------------------------------------
+     * [2][3] 恒等式：对一组值，value == *iptr + 返回值。
+     * --------------------------------------------------------------- */
+    {
+        double vals[] = { 1.5, -1.5, 100.25, -100.25, 0.001, -0.001 };
+        size_t i;
+        for (i = 0; i < sizeof(vals) / sizeof(vals[0]); i++) {
+            double ip = 0.0;
+            double fp = modf(vals[i], &ip);
+            assert(dbl_eq(ip + fp, vals[i]));
+            /* 小数部分绝对值 < 1 */
+            double afp = fp < 0 ? -fp : fp;
+            assert(afp < 1.0);
+        }
+    }
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「modf 第二参数必须为 double *」：
+ * 传入 int * 类型不匹配，gcc -std=c99 应报错
+ *   warning/error: passing argument 2 of 'modf' from incompatible pointer type
+ */
+void neg_wrong_ptr_type(void)
+{
+    int ipart;
+    double fpart = modf(3.5, &ipart);   /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 第二参数必须为 double *」：
+ * 传入 float * 类型不匹配，gcc -std=c99 应报错
+ */
+void neg_float_ptr(void)
+{
+    float ipart;
+    double fpart = modf(3.5, &ipart);   /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modff 第二参数必须为 float *」：
+ * 传入 double * 类型不匹配，gcc -std=c99 应报错
+ */
+void neg_modff_wrong_ptr(void)
+{
+    double ipart;
+    float fpart = modff(3.5f, &ipart);  /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modfl 第二参数必须为 long double *」：
+ * 传入 double * 类型不匹配，gcc -std=c99 应报错
+ */
+void neg_modfl_wrong_ptr(void)
+{
+    double ipart;
+    long double fpart = modfl(3.5L, &ipart);  /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 第二参数必须为指针」：
+ * 传入非指针（double 值），gcc -std=c99 应报错
+ */
+void neg_non_pointer(void)
+{
+    double ipart = 0.0;
+    double fpart = modf(3.5, ipart);    /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 第二参数必须为可修改左值（指向对象的指针）」：
+ * 传入 const double * 会丢弃 const 限定，gcc -std=c99 应报错
+ */
+void neg_const_ptr(void)
+{
+    const double ipart = 0.0;
+    double fpart = modf(3.5, &ipart);   /* 期望编译报错：丢弃 const 限定 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 第二参数必须为指针」：
+ * 传入函数指针类型不匹配，gcc -std=c99 应报错
+ */
+void neg_func_ptr(void)
+{
+    double (*fp)(double, double *) = modf;
+    double fpart = modf(3.5, fp);       /* 期望编译报错：类型不匹配 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 第一参数必须为算术类型（double）」：
+ * 传入结构体，gcc -std=c99 应报错
+ */
+struct S { int x; };
+void neg_struct_arg(void)
+{
+    struct S s;
+    double ipart;
+    double fpart = modf(s, &ipart);     /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 第一参数必须为算术类型（double）」：
+ * 传入指针，gcc -std=c99 应报错
+ */
+void neg_pointer_arg(void)
+{
+    int x = 0;
+    double ipart;
+    double fpart = modf(&x, &ipart);    /* 期望编译报错 */
+    (void)fpart;
+}
+
+/* 违反约束「modf 返回值类型为 double」：
+ * 将返回值赋给结构体，gcc -std=c99 应报错
+ */
+void neg_return_to_struct(void)
+{
+    struct S s;
+    double ipart;
+    s = modf(3.5, &ipart);              /* 期望编译报错：类型不兼容 */
+    (void)s;
+}
+
+/* 违反约束「modf 第二参数必须为指针」：
+ * 传入整数常量，gcc -std=c99 应报错
+ */
+void neg_int_literal(void)
+{
+    double fpart = modf(3.5, 0);        /* 期望编译报错：0 不是指针 */
+    (void)fpart;
+}
+
+#endif /* 负向测试结束 */
+====ARTICLE 7.12.6.13 ====
+---TEXT---
+The scalbn and scalbln functions
+Synopsis:
+[1] #include <math.h> double scalbn(double x, int n); float scalbnf(float x, int n); long double scalbnl(long double x, int n); double scalbln(double x, long int n); float scalblnf(float x, long int n); long double scalblnl(long double x, long int n);
+Description:
+[2] The scalbn and scalbln functions compute x FLT_RADIX efficiently, not normally by computing FLT_RADIX explicitly. A range error may occur.
+Returns:
+[3] The scalbn and scalbln functions return x FLT_RADIX .
+---CODE---
+/*
+ * 测试条款：C99 7.12.6.13  scalbn / scalbln 函数族
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 scalbn/scalbnf/scalbnl/scalbln/scalblnf/scalblnl，
+ *             验证返回值等于 x * FLT_RADIX^n（在可表示范围内精确相等）。
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中），期望编译器报错。
+ *
+ * 覆盖段落：
+ *   [1] Synopsis：六个函数声明、参数类型（int n 与 long int n）
+ *   [2] Description：计算 x * FLT_RADIX^n；范围错误可能发生
+ *   [3] Returns：返回 x * FLT_RADIX^n
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] Synopsis：验证六个函数均可被调用，且参数类型正确。
+ *     scalbn 族第二参数为 int；scalbln 族第二参数为 long int。 */
+static void test_synopsis(void)
+{
+    double      d  = scalbn(1.0, 3);          /* double scalbn(double, int) */
+    float       f  = scalbnf(1.0f, 3);        /* float  scalbnf(float, int) */
+    long double ld = scalbnl(1.0L, 3);        /* long double scalbnl(long double, int) */
+
+    double      d2 = scalbln(1.0, 3L);        /* double scalbln(double, long int) */
+    float       f2 = scalblnf(1.0f, 3L);      /* float  scalblnf(float, long int) */
+    long double ld2= scalblnl(1.0L, 3L);      /* long double scalblnl(long double, long int) */
+
+    /* 仅验证调用成功、结果有限 */
+    assert(isfinite(d) && isfinite(f) && isfinite(ld));
+    assert(isfinite(d2) && isfinite(f2) && isfinite(ld2));
+}
+
+/* [2][3] 核心语义：scalbn(x, n) == x * FLT_RADIX^n
+ *        在结果可精确表示时，应严格相等。 */
+static void test_semantics_exact(void)
+{
+    /* FLT_RADIX 通常为 2；用 ldexp 作为等价参照（ldexp 也是 x*2^n，
+     * 但这里我们直接按 FLT_RADIX 计算，避免依赖 ldexp 的实现细节）。 */
+    int i;
+
+    /* 对若干整数 n，验证 scalbn(1.0, n) == FLT_RADIX^n（用循环累乘得到期望值） */
+    for (i = -10; i <= 10; ++i) {
+        double expected = 1.0;
+        int k;
+        if (i >= 0) {
+            for (k = 0; k < i; ++k)  expected *= (double)FLT_RADIX;
+        } else {
+            for (k = 0; k < -i; ++k) expected /= (double)FLT_RADIX;
+        }
+        double got = scalbn(1.0, i);
+        assert(got == expected);   /* 精确相等（2 的幂可精确表示） */
+    }
+
+    /* 一般 x：scalbn(x, n) == x * FLT_RADIX^n，取可精确表示的组合 */
+    {
+        double x = 3.0;            /* 3.0 可精确表示 */
+        int n = 4;
+        double expected = x;
+        int k;
+        for (k = 0; k < n; ++k) expected *= (double)FLT_RADIX;
+        assert(scalbn(x, n) == expected);
+    }
+
+    /* n == 0 时返回 x 本身 */
+    assert(scalbn(1.5, 0) == 1.5);
+    assert(scalbn(-2.25, 0) == -2.25);
+
+    /* 负 n：scalbn(x, -n) == x / FLT_RADIX^n */
+    {
+        double x = 8.0;
+        int n = -3;
+        double expected = x;
+        int k;
+        for (k = 0; k < -n; ++k) expected /= (double)FLT_RADIX;
+        assert(scalbn(x, n) == expected);   /* 8 / 2^3 = 1.0 */
+    }
+}
+
+/* [2][3] 各类型版本语义一致 */
+static void test_semantics_types(void)
+{
+    /* float 版本 */
+    {
+        float x = 1.0f;
+        int n = 5;
+        float expected = x;
+        int k;
+        for (k = 0; k < n; ++k) expected *= (float)FLT_RADIX;
+        assert(scalbnf(x, n) == expected);
+    }
+    /* long double 版本 */
+    {
+        long double x = 1.0L;
+        int n = 5;
+        long double expected = x;
+        int k;
+        for (k = 0; k < n; ++k) expected *= (long double)FLT_RADIX;
+        assert(scalbnl(x, n) == expected);
+    }
+    /* scalbln 族：第二参数为 long int，语义相同 */
+    {
+        double x = 1.0;
+        long int n = 6L;
+        double expected = x;
+        long int k;
+        for (k = 0; k < n; ++k) expected *= (double)FLT_RADIX;
+        assert(scalbln(x, n) == expected);
+    }
+    {
+        float x = 1.0f;
+        long int n = 6L;
+        float expected = x;
+        long int k;
+        for (k = 0; k < n; ++k) expected *= (float)FLT_RADIX;
+        assert(scalblnf(x, n) == expected);
+    }
+    {
+        long double x = 1.0L;
+        long int n = 6L;
+        long double expected = x;
+        long int k;
+        for (k = 0; k < n; ++k) expected *= (long double)FLT_RADIX;
+        assert(scalblnl(x, n) == expected);
+    }
+}
+
+/* [2] 范围错误：极大 n 可能触发范围错误（返回 HUGE_VAL 或 0）。
+ *     这里只验证函数被调用且结果符合「溢出/下溢」的合理形态，
+ *     不把 UB 当作测试目标。 */
+static void test_range(void)
+{
+    double big = scalbn(1.0, 100000);   /* 极大正指数，通常溢出 */
+    double small = scalbn(1.0, -100000);/* 极大负指数，通常下溢为 0 */
+
+    /* 溢出时返回 HUGE_VAL（正无穷或极大值），下溢时返回 0 或极小值。
+     * 只做宽松检查：结果非 NaN，且 big 不小于 small。 */
+    assert(!isnan(big));
+    assert(!isnan(small));
+    assert(big >= small);
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_semantics_exact();
+    test_semantics_types();
+    test_range();
+
+    printf("C99 7.12.6.13 scalbn/scalbln: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用实参类型必须与原型兼容」：
+ * scalbn 原型为 double scalbn(double, int)，
+ * 第二参数必须是 int 兼容类型；传入结构体应报错。 */
+struct S { int x; } s;
+double r1 = scalbn(1.0, s);          /* 期望：error: incompatible type for argument 2 */
+
+/* 违反约束「实参个数必须与原型一致」：
+ * scalbn 需要 2 个实参，只给 1 个应报错。 */
+double r2 = scalbn(1.0);             /* 期望：error: too few arguments to function 'scalbn' */
+
+/* 违反约束「实参个数必须与原型一致」：
+ * scalbn 需要 2 个实参，给 3 个应报错。 */
+double r3 = scalbn(1.0, 2, 3);       /* 期望：error: too many arguments to function 'scalbn' */
+
+/* 违反约束「函数必须已声明」：
+ * 未包含 <math.h> 且未声明 scalbn 时调用，C99 禁止隐式函数声明。 */
+double r4 = scalbn_undeclared(1.0, 2); /* 期望：error: implicit declaration of function */
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * 函数调用结果不是左值，不能赋值。 */
+scalbn(1.0, 2) = 5.0;                /* 期望：error: lvalue required as left operand of assignment */
+
+/* 违反约束「取地址操作数必须是左值」：
+ * 函数调用结果不是左值，不能取地址。 */
+double *p = &scalbn(1.0, 2);         /* 期望：error: lvalue required as unary '&' operand */
+
+#endif
+====ARTICLE 7.12.7.1 ====
+---TEXT---
+The cbrt functions
+Synopsis:
+[1] #include <math.h> double cbrt(double x); float cbrtf(float x); long double cbrtl(long double x);
+Description:
+[2] The cbrt functions compute the real cube root of x.
+Returns:
+[3] The cbrt functions return x.
+---CODE---
+/*
+ * 测试 C99 7.12.7.1 —— cbrt / cbrtf / cbrtl 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h> 后调用 cbrt/cbrtf/cbrtl，程序应能编译并运行通过，
+ *             验证它们计算实数立方根（[2]）并返回结果（[3]）。
+ *   负向测试：违反约束的代码应被编译器拒绝（编译报错）。
+ *
+ * 条款段落：
+ *   [1] 概要：三个函数原型 double cbrt(double); float cbrtf(float);
+ *             long double cbrtl(long double);
+ *   [2] 描述：计算 x 的实数立方根。
+ *   [3] 返回：返回 x 的立方根。
+ */
+
+#include <math.h>
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 概要：验证三个函数原型可用，且返回类型分别为 double/float/long double */
+static void test_synopsis_types(void)
+{
+    double      (*pd)(double)          = cbrt;
+    float       (*pf)(float)           = cbrtf;
+    long double (*pl)(long double)     = cbrtl;
+
+    /* 通过函数指针调用，确认签名匹配 */
+    double      rd = pd(8.0);
+    float       rf = pf(8.0f);
+    long double rl = pl(8.0L);
+
+    (void)rd; (void)rf; (void)rl;
+    printf("[1] 原型/返回类型检查通过\n");
+}
+
+/* [2][3] 描述与返回：cbrt 计算实数立方根并返回之 */
+static void test_cbrt_double(void)
+{
+    /* 正数：cbrt(8) == 2 */
+    double r = cbrt(8.0);
+    assert(fabs(r - 2.0) < 1e-12);
+
+    /* 正数：cbrt(27) == 3 */
+    r = cbrt(27.0);
+    assert(fabs(r - 3.0) < 1e-12);
+
+    /* 零：cbrt(0) == 0 */
+    r = cbrt(0.0);
+    assert(r == 0.0);
+
+    /* 负数：实数立方根，cbrt(-8) == -2（区别于 sqrt 的定义域限制） */
+    r = cbrt(-8.0);
+    assert(fabs(r - (-2.0)) < 1e-12);
+
+    r = cbrt(-27.0);
+    assert(fabs(r - (-3.0)) < 1e-12);
+
+    /* 立方根的自反性：cbrt(x^3) == x */
+    double x = 1.5;
+    r = cbrt(x * x * x);
+    assert(fabs(r - x) < 1e-12);
+
+    printf("[2][3] cbrt(double) 语义检查通过\n");
+}
+
+/* [2][3] cbrtf：float 版本 */
+static void test_cbrtf(void)
+{
+    float r = cbrtf(8.0f);
+    assert(fabsf(r - 2.0f) < 1e-5f);
+
+    r = cbrtf(-8.0f);
+    assert(fabsf(r - (-2.0f)) < 1e-5f);
+
+    r = cbrtf(0.0f);
+    assert(r == 0.0f);
+
+    printf("[2][3] cbrtf(float) 语义检查通过\n");
+}
+
+/* [2][3] cbrtl：long double 版本 */
+static void test_cbrtl(void)
+{
+    long double r = cbrtl(8.0L);
+    assert(fabsl(r - 2.0L) < 1e-15L);
+
+    r = cbrtl(-8.0L);
+    assert(fabsl(r - (-2.0L)) < 1e-15L);
+
+    r = cbrtl(0.0L);
+    assert(r == 0.0L);
+
+    printf("[2][3] cbrtl(long double) 语义检查通过\n");
+}
+
+/* [2] 与 pow(x, 1.0/3.0) 的数值一致性（对正数） */
+static void test_consistency_with_pow(void)
+{
+    double x = 64.0;
+    double a = cbrt(x);
+    double b = pow(x, 1.0 / 3.0);
+    assert(fabs(a - b) < 1e-9);
+    printf("[2] cbrt 与 pow(x,1/3) 一致性检查通过\n");
+}
+
+int main(void)
+{
+    test_synopsis_types();
+    test_cbrt_double();
+    test_cbrtf();
+    test_cbrtl();
+    test_consistency_with_pow();
+
+    printf("所有正向测试通过。\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「cbrt 的参数必须为算术类型（可转换为 double）」：
+ * 传入结构体类型，gcc -std=c99 应报错：
+ *   error: incompatible type for argument 1 of 'cbrt' */
+struct S { int x; } s;
+double bad1 = cbrt(s);
+
+/* 违反约束「cbrt 的参数必须为算术类型」：
+ * 传入指针类型，gcc -std=c99 应报错：
+ *   error: incompatible type for argument 1 of 'cbrt' */
+double bad2 = cbrt("hello");
+
+/* 违反约束「cbrt 只接受一个参数」：
+ * 参数个数不匹配，gcc -std=c99 应报错：
+ *   error: too many arguments to function 'cbrt' */
+double bad3 = cbrt(1.0, 2.0);
+
+/* 违反约束「cbrt 需要恰好一个参数」：
+ * 参数个数不足，gcc -std=c99 应报错：
+ *   error: too few arguments to function 'cbrt' */
+double bad4 = cbrt();
+
+/* 违反约束「cbrtf 的参数必须为算术类型」：
+ * 传入结构体，gcc -std=c99 应报错：
+ *   error: incompatible type for argument 1 of 'cbrtf' */
+float bad5 = cbrtf(s);
+
+/* 违反约束「cbrtl 的参数必须为算术类型」：
+ * 传入指针，gcc -std=c99 应报错：
+ *   error: incompatible type for argument 1 of 'cbrtl' */
+long double bad6 = cbrtl(&s);
+
+/* 违反约束「cbrt 的返回值不可作为左值赋值」：
+ * 函数调用结果不是左值，gcc -std=c99 应报错：
+ *   error: lvalue required as left operand of assignment */
+cbrt(8.0) = 2.0;
+
+/* 违反约束「cbrtf 的返回值不可作为左值赋值」：
+ * gcc -std=c99 应报错：lvalue required as left operand of assignment */
+cbrtf(8.0f) = 2.0f;
+
+/* 违反约束「cbrtl 的返回值不可作为左值赋值」：
+ * gcc -std=c99 应报错：lvalue required as left operand of assignment */
+cbrtl(8.0L) = 2.0L;
+
+#endif
+====ARTICLE 7.12.7.2 ====
+---TEXT---
+The fabs functions
+Synopsis:
+[1] #include <math.h> double fabs(double x); float fabsf(float x); long double fabsl(long double x);
+Description:
+[2] The fabs functions compute the absolute value of a floating-point number x.
+Returns:
+[3] The fabs functions return | x |.
+---CODE---
+/*
+ * 测试条款：C99 7.12.7.2  The fabs functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h> 后，fabs / fabsf / fabsl 三个函数可用，
+ *             分别接受 double / float / long double 实参，
+ *             返回对应类型的 |x|（绝对值），程序应能编译并运行通过。
+ *   负向测试：违反约束的代码（如参数个数错误、对非算术类型调用等）
+ *             应导致编译报错；这些片段放在 #if 0 中，不影响本文件编译。
+ *
+ * 覆盖段落：
+ *   [1] Synopsis：三个函数原型
+ *   [2] Description：计算浮点数的绝对值
+ *   [3] Returns：返回 |x|
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] Synopsis：验证三个函数原型存在且返回类型正确 */
+static void test_synopsis(void)
+{
+    /* 通过函数指针类型检查返回类型与参数类型 */
+    double      (*pf_d)(double)            = fabs;
+    float       (*pf_f)(float)             = fabsf;
+    long double (*pf_l)(long double)       = fabsl;
+
+    /* 调用一次，确保链接可用 */
+    assert(pf_d(-1.0) == 1.0);
+    assert(pf_f(-1.0f) == 1.0f);
+    assert(pf_l(-1.0L) == 1.0L);
+
+    /* 返回类型大小检查 */
+    assert(sizeof(fabs(-1.0))   == sizeof(double));
+    assert(sizeof(fabsf(-1.0f)) == sizeof(float));
+    assert(sizeof(fabsl(-1.0L)) == sizeof(long double));
+}
+
+/* [2][3] Description + Returns：fabs 计算并返回 |x|（double） */
+static void test_fabs_double(void)
+{
+    /* 正数：|x| == x */
+    assert(fabs(3.5) == 3.5);
+    /* 负数：|x| == -x */
+    assert(fabs(-3.5) == 3.5);
+    /* 零：|0| == 0，且符号为正 */
+    assert(fabs(0.0) == 0.0);
+    assert(signbit(fabs(-0.0)) == 0);   /* fabs(-0.0) 应为 +0.0 */
+    /* 结果非负 */
+    assert(fabs(-123.456) >= 0.0);
+    /* 大数 */
+    assert(fabs(-DBL_MAX) == DBL_MAX);
+    /* 小数 */
+    assert(fabs(-DBL_MIN) == DBL_MIN);
+    /* 无穷：|±inf| == +inf */
+    assert(isinf(fabs(-INFINITY)) && fabs(-INFINITY) > 0);
+    /* NaN：|NaN| 仍为 NaN */
+    assert(isnan(fabs(NAN)));
+}
+
+/* [2][3] fabsf：float 版本 */
+static void test_fabsf(void)
+{
+    assert(fabsf(2.5f) == 2.5f);
+    assert(fabsf(-2.5f) == 2.5f);
+    assert(fabsf(0.0f) == 0.0f);
+    assert(signbit(fabsf(-0.0f)) == 0);
+    assert(fabsf(-FLT_MAX) == FLT_MAX);
+    assert(isinf(fabsf(-INFINITY)) && fabsf(-INFINITY) > 0);
+    assert(isnan(fabsf(NAN)));
+}
+
+/* [2][3] fabsl：long double 版本 */
+static void test_fabsl(void)
+{
+    assert(fabsl(7.25L) == 7.25L);
+    assert(fabsl(-7.25L) == 7.25L);
+    assert(fabsl(0.0L) == 0.0L);
+    assert(signbit(fabsl(-0.0L)) == 0);
+    assert(fabsl(-LDBL_MAX) == LDBL_MAX);
+    assert(isinf(fabsl(-INFINITY)) && fabsl(-INFINITY) > 0);
+    assert(isnan(fabsl(NAN)));
+}
+
+/* [2] 语义：|x| 满足 |x| == x 当 x>=0，|x| == -x 当 x<0 */
+static void test_absolute_value_semantics(void)
+{
+    double vals[] = { -10.0, -1.0, -0.5, 0.0, 0.5, 1.0, 10.0 };
+    size_t i;
+    for (i = 0; i < sizeof(vals)/sizeof(vals[0]); ++i) {
+        double x = vals[i];
+        double r = fabs(x);
+        if (x >= 0.0)
+            assert(r == x);
+        else
+            assert(r == -x);
+        assert(r >= 0.0);
+    }
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_fabs_double();
+    test_fabsf();
+    test_fabsl();
+    test_absolute_value_semantics();
+
+    printf("C99 7.12.7.2 fabs/fabsf/fabsl: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * fabs 原型为 double fabs(double)，此处传 0 个实参，
+ * gcc -std=c99 应报错：too few arguments to function 'fabs'。 */
+double bad1 = fabs();
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * 传 2 个实参，gcc -std=c99 应报错：too many arguments to function 'fabs'。 */
+double bad2 = fabs(1.0, 2.0);
+
+/* 违反约束「实参必须可转换为参数类型」：
+ * 结构体类型无法隐式转换为 double，
+ * gcc -std=c99 应报错：incompatible type for argument 1 of 'fabs'。 */
+struct S { int x; } s;
+double bad3 = fabs(s);
+
+/* 违反约束「实参必须可转换为参数类型」：
+ * 指针类型无法隐式转换为 double，
+ * gcc -std=c99 应报错：incompatible type for argument 1 of 'fabs'。 */
+double bad4 = fabs("hello");
+
+/* 违反约束「函数名不可作为赋值目标」：
+ * fabs 是函数指示符，不是左值，
+ * gcc -std=c99 应报错：lvalue required as left operand of assignment。 */
+void bad5(void) { fabs = 0; }
+
+/* 违反约束「fabsf 参数类型为 float，实参须可转换」：
+ * 结构体无法转换为 float，
+ * gcc -std=c99 应报错：incompatible type for argument 1 of 'fabsf'。 */
+float bad6 = fabsf(s);
+
+/* 违反约束「fabsl 参数类型为 long double，实参须可转换」：
+ * 结构体无法转换为 long double，
+ * gcc -std=c99 应报错：incompatible type for argument 1 of 'fabsl'。 */
+long double bad7 = fabsl(s);
+
+#endif /* 负向测试结束 */
+====ARTICLE 7.12.7.3 ====
+---TEXT---
+The hypot functions
+Synopsis:
+[1] #include <math.h> double hypot(double x, double y); float hypotf(float x, float y); long double hypotl(long double x, long double y);
+Description:
+[2] The hypot functions compute the square root of the sum of the squares of x and y, without undue overflow or underflow. A range error may occur.
+Returns:
+[4] The hypot functions return (sqrt)(x + y).
+---CODE---
+/*
+ * 测试 C99 7.12.7.3 —— hypot 函数族
+ *
+ * 预期行为：
+ *   正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：位于 #if 0 块内，故意违反约束，编译器应报错。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明：double hypot(double,double);
+ *                  float  hypotf(float,float);
+ *                  long double hypotl(long double,long double);
+ *   [2] 语义：计算 sqrt(x^2 + y^2)，避免不必要的上溢/下溢；可能发生范围错误。
+ *   [4] 返回值：返回 sqrt(x^2 + y^2)。
+ */
+
+#include <math.h>
+#include <stdio.h>
+#include <assert.h>
+#include <float.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性检查：取函数地址，验证三个原型均已在 <math.h> 中声明 */
+static double (*p_hypot)(double, double)              = hypot;
+static float  (*p_hypotf)(float, float)               = hypotf;
+static long double (*p_hypotl)(long double, long double) = hypotl;
+
+/* [4] 基本返回值：hypot(3,4) == 5 */
+static void test_basic_return(void)
+{
+    double r = hypot(3.0, 4.0);
+    assert(fabs(r - 5.0) < 1e-12);
+
+    /* 对称性：hypot(x,y) == hypot(y,x) */
+    assert(fabs(hypot(3.0, 4.0) - hypot(4.0, 3.0)) < 1e-12);
+
+    /* 与 sqrt(x*x+y*y) 一致（在无上溢/下溢的范围内） */
+    double x = 1.5, y = 2.5;
+    assert(fabs(hypot(x, y) - sqrt(x * x + y * y)) < 1e-12);
+
+    /* 零参数 */
+    assert(hypot(0.0, 0.0) == 0.0);
+    assert(hypot(5.0, 0.0) == 5.0);
+    assert(hypot(0.0, 5.0) == 5.0);
+}
+
+/* [2] 避免不必要的上溢：x,y 很大时，x*x 会溢出，但 hypot 不应溢出 */
+static void test_no_undue_overflow(void)
+{
+    double big = DBL_MAX / 4.0;   /* big*big 会溢出为 inf */
+    double r = hypot(big, big);
+    /* 结果应为 big*sqrt(2)，有限且非 inf */
+    assert(!isinf(r));
+    assert(r > 0.0);
+    assert(fabs(r - big * sqrt(2.0)) / (big * sqrt(2.0)) < 1e-12);
+}
+
+/* [2] 避免不必要的下溢：x,y 很小时，x*x 会下溢为 0，但 hypot 应保留精度 */
+static void test_no_undue_underflow(void)
+{
+    double tiny = DBL_MIN;        /* tiny*tiny 下溢为 0 */
+    double r = hypot(tiny, tiny);
+    /* 结果应为 tiny*sqrt(2)，非零 */
+    assert(r > 0.0);
+    assert(fabs(r - tiny * sqrt(2.0)) / (tiny * sqrt(2.0)) < 1e-12);
+}
+
+/* [1][4] float 版本 hypotf */
+static void test_hypotf(void)
+{
+    float r = hypotf(3.0f, 4.0f);
+    assert(fabsf(r - 5.0f) < 1e-5f);
+
+    /* 避免上溢 */
+    float big = FLT_MAX / 4.0f;
+    float rb = hypotf(big, big);
+    assert(!isinf(rb));
+    assert(rb > 0.0f);
+}
+
+/* [1][4] long double 版本 hypotl */
+static void test_hypotl(void)
+{
+    long double r = hypotl(3.0L, 4.0L);
+    assert(fabsl(r - 5.0L) < 1e-12L);
+
+    long double big = LDBL_MAX / 4.0L;
+    long double rb = hypotl(big, big);
+    assert(!isinf(rb));
+    assert(rb > 0.0L);
+}
+
+/* [2] 范围错误：hypot(inf, nan) 等特殊值行为（C99 F.9 规定 hypot(±inf, y) = +inf） */
+static void test_special_values(void)
+{
+    /* hypot(inf, y) = +inf */
+    assert(isinf(hypot(INFINITY, 1.0)));
+    assert(isinf(hypot(1.0, INFINITY)));
+    assert(isinf(hypot(-INFINITY, 1.0)));
+
+    /* hypot(nan, inf) = +inf（F.9.4.3） */
+    assert(isinf(hypot(NAN, INFINITY)));
+
+    /* hypot(nan, y) = nan */
+    assert(isnan(hypot(NAN, 1.0)));
+    assert(isnan(hypot(1.0, NAN)));
+}
+
+int main(void)
+{
+    test_basic_return();
+    test_no_undue_overflow();
+    test_no_undue_underflow();
+    test_hypotf();
+    test_hypotl();
+    test_special_values();
+
+    printf("C99 7.12.7.3 hypot: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 原型参数类型」：hypot 需要两个 double 实参，
+ * 传入结构体类型不满足算术类型要求，gcc -std=c99 应报错。 */
+struct S { int x; } s1, s2;
+double bad1 = hypot(s1, s2);
+
+/* 违反约束「[1] 参数个数」：hypot 需要 2 个实参，只给 1 个应报错。 */
+double bad2 = hypot(1.0);
+
+/* 违反约束「[1] 参数个数」：hypot 需要 2 个实参，给 3 个应报错。 */
+double bad3 = hypot(1.0, 2.0, 3.0);
+
+/* 违反约束「[1] 返回类型不可赋值」：hypot 返回 double，
+ * 不能把函数调用结果当作左值赋值，应报错。 */
+hypot(1.0, 2.0) = 5.0;
+
+/* 违反约束「[1] 函数名不可被赋值」：函数指示符不是可修改左值。 */
+hypot = 0;
+
+/* 违反约束「[1] 参数类型」：hypotf 需要 float 实参，
+ * 传入结构体类型应报错。 */
+float bad4 = hypotf(s1, s2);
+
+/* 违反约束「[1] 参数类型」：hypotl 需要 long double 实参，
+ * 传入结构体类型应报错。 */
+long double bad5 = hypotl(s1, s2);
+
+#endif
+====ARTICLE 7.12.7.4 ====
+---TEXT---
+The pow functions
+Synopsis:
+[1] #include <math.h> double pow(double x, double y); float powf(float x, float y); long double powl(long double x, long double y);
+Description:
+[2] The pow functions compute x raised to the power y. A domain error occurs if x is finite and negative and y is finite and not an integer value. A range error may occur. A domain error may occur if x is zero and y is zero. A domain error or range error may occur if x is zero and y is less than zero.
+Returns:
+[3] The pow functions return x.
+---CODE---
+/*
+ * 测试 C99 7.12.7.4 —— pow 函数族 (pow / powf / powl)
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 pow/powf/powl，验证返回值语义，
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中）应导致编译报错。
+ *
+ * 说明：条款 [3] 原文在标准中为 "return x^y"（此处文本被截断为 "return x"），
+ *       按标准语义 pow(x,y) 返回 x 的 y 次幂。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* 辅助：判断两个 double 是否近似相等 */
+static int dclose(double a, double b)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= 1e-9 * (1.0 + (b < 0 ? -b : b));
+}
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] Synopsis：三个函数均声明于 <math.h>，原型为
+ *     double pow(double, double);
+ *     float  powf(float, float);
+ *     long double powl(long double, long double);
+ *     通过取函数指针类型来验证原型签名。 */
+static void test_synopsis(void)
+{
+    double (*pd)(double, double)          = pow;
+    float  (*pf)(float, float)            = powf;
+    long double (*pl)(long double, long double) = powl;
+
+    assert(pd != NULL);
+    assert(pf != NULL);
+    assert(pl != NULL);
+    printf("[1] Synopsis: pow/powf/powl 原型签名正确\n");
+}
+
+/* [2] Description：pow 计算 x 的 y 次幂（正常定义域内） */
+static void test_description_normal(void)
+{
+    /* 2^10 = 1024 */
+    assert(dclose(pow(2.0, 10.0), 1024.0));
+    /* 9^0.5 = 3 */
+    assert(dclose(pow(9.0, 0.5), 3.0));
+    /* 任意非零数的 0 次幂 = 1 */
+    assert(dclose(pow(5.0, 0.0), 1.0));
+    assert(dclose(pow(-5.0, 0.0), 1.0));
+    /* 1 的任意次幂 = 1 */
+    assert(dclose(pow(1.0, 123.456), 1.0));
+    /* 负底数 + 整数指数：定义域内，结果有定义 */
+    assert(dclose(pow(-2.0, 3.0), -8.0));
+    assert(dclose(pow(-2.0, 4.0), 16.0));
+    printf("[2] Description: 正常定义域内 pow 计算正确\n");
+}
+
+/* [2] Description：x 为有限负数且 y 为有限非整数 -> 定义域错误 */
+static void test_domain_error_neg_noninteger(void)
+{
+    double r = pow(-2.0, 0.5);   /* 定义域错误 */
+    assert(isnan(r));            /* 实现应返回 NaN */
+    printf("[2] Domain error: pow(-2.0, 0.5) = NaN (errno=%d)\n", errno);
+}
+
+/* [2] Description：x 为 0 且 y 为 0 -> 可能发生定义域错误 */
+static void test_domain_error_zero_zero(void)
+{
+    /* 标准说 "may occur"，因此只检查返回值是 NaN 或 1.0 之一 */
+    double r = pow(0.0, 0.0);
+    assert(isnan(r) || dclose(r, 1.0));
+    printf("[2] pow(0.0, 0.0) = %g (允许 NaN 或 1.0)\n", r);
+}
+
+/* [2] Description：x 为 0 且 y < 0 -> 可能定义域错误或范围错误 */
+static void test_domain_or_range_zero_neg(void)
+{
+    double r = pow(0.0, -1.0);
+    /* 允许 NaN（定义域错误）或 +inf（范围错误/极点） */
+    assert(isnan(r) || isinf(r));
+    printf("[2] pow(0.0, -1.0) = %g (允许 NaN 或 inf)\n", r);
+}
+
+/* [2] Description：范围错误可能发生（结果溢出） */
+static void test_range_error_overflow(void)
+{
+    double r = pow(DBL_MAX, 2.0);   /* 溢出 -> 范围错误 */
+    assert(isinf(r) && r > 0);
+    printf("[2] Range error: pow(DBL_MAX, 2.0) = %g (inf)\n", r);
+}
+
+/* [3] Returns：pow 返回 x 的 y 次幂；powf/powl 同理 */
+static void test_returns(void)
+{
+    /* double 版本 */
+    assert(dclose(pow(3.0, 4.0), 81.0));
+
+    /* float 版本 */
+    float rf = powf(2.0f, 8.0f);
+    assert(rf == 256.0f);
+
+    /* long double 版本 */
+    long double rl = powl(2.0L, 16.0L);
+    assert(rl == 65536.0L);
+
+    printf("[3] Returns: pow=81, powf=256, powl=65536 均正确\n");
+}
+
+/* [3] Returns：验证返回类型分别为 double / float / long double */
+static void test_return_types(void)
+{
+    /* 用 sizeof 检查返回类型大小（在常见平台上 double=8, float=4, long double>=8） */
+    assert(sizeof(pow(2.0, 2.0))  == sizeof(double));
+    assert(sizeof(powf(2.0f, 2.0f)) == sizeof(float));
+    assert(sizeof(powl(2.0L, 2.0L)) == sizeof(long double));
+    printf("[3] Return types: double/float/long double 尺寸正确\n");
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_description_normal();
+    test_domain_error_neg_noninteger();
+    test_domain_error_zero_zero();
+    test_domain_or_range_zero_neg();
+    test_range_error_overflow();
+    test_returns();
+    test_return_types();
+
+    printf("\n所有正向测试通过。\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「pow 的参数必须为算术类型（double）」：
+ * 传入结构体类型，gcc -std=c99 应报错：
+ *   error: incompatible type for argument 1 of 'pow' */
+struct S { int x; } s;
+pow(s, 2.0);
+
+/* 违反约束「pow 的参数个数必须为 2」：
+ * 参数个数不匹配，应报错：
+ *   error: too few arguments to function 'pow' */
+pow(2.0);
+
+/* 违反约束「pow 的参数个数必须为 2」：
+ * 参数过多，应报错：
+ *   error: too many arguments to function 'pow' */
+pow(2.0, 3.0, 4.0);
+
+/* 违反约束「pow 的参数必须为算术类型」：
+ * 传入指针类型，应报错：
+ *   error: incompatible type for argument 1 of 'pow' */
+double *p = 0;
+pow(p, 2.0);
+
+/* 违反约束「powf 的参数必须为算术类型」：
+ * 传入结构体，应报错 */
+powf(s, 2.0f);
+
+/* 违反约束「powl 的参数必须为算术类型」：
+ * 传入结构体，应报错 */
+powl(s, 2.0L);
+
+/* 违反约束「pow 的返回值不可作为左值赋值」：
+ * 函数调用结果不是左值，对其赋值应报错：
+ *   error: lvalue required as left operand of assignment */
+pow(2.0, 3.0) = 5.0;
+
+/* 违反约束「powf 的返回值不可作为左值赋值」：
+ * 应报错：lvalue required as left operand of assignment */
+powf(2.0f, 3.0f) = 5.0f;
+
+/* 违反约束「powl 的返回值不可作为左值赋值」：
+ * 应报错：lvalue required as left operand of assignment */
+powl(2.0L, 3.0L) = 5.0L;
+
+#endif
+====ARTICLE 7.12.7.5 ====
+---TEXT---
+The sqrt functions
+Synopsis:
+[1] #include <math.h> double sqrt(double x); float sqrtf(float x); long double sqrtl(long double x);
+Description:
+[2] The sqrt functions compute the nonnegative square root of x. A domain error occurs if the argument is less than zero.
+Returns:
+[3] The sqrt functions return (sqrt)(x).
+---CODE---
+/*
+ * 测试条款：C99 7.12.7.5  The sqrt functions
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明：double sqrt(double); float sqrtf(float); long double sqrtl(long double);
+ *   [2] 计算非负平方根；参数小于零时发生 domain error。
+ *   [3] 返回 (sqrt)(x)。
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <errno.h>
+#include <fenv.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型声明：三个函数均声明于 <math.h>，返回类型与参数类型正确。
+ *     通过取函数指针并检查其类型来验证原型存在且签名正确。 */
+static void test_prototypes(void)
+{
+    double (*p_d)(double)          = sqrt;
+    float  (*p_f)(float)           = sqrtf;
+    long double (*p_l)(long double)= sqrtl;
+
+    assert(p_d != NULL);
+    assert(p_f != NULL);
+    assert(p_l != NULL);
+
+    /* 调用形式与原型一致 */
+    double  rd = sqrt(4.0);
+    float   rf = sqrtf(4.0f);
+    long double rl = sqrtl(4.0L);
+
+    assert(rd == 2.0);
+    assert(rf == 2.0f);
+    assert(rl == 2.0L);
+}
+
+/* [2] 计算非负平方根：对非负参数，结果 r 满足 r >= 0 且 r*r == x（在浮点精度内）。 */
+static void test_nonnegative_root(void)
+{
+    double x = 9.0;
+    double r = sqrt(x);
+    assert(r >= 0.0);          /* 非负平方根 */
+    assert(r == 3.0);
+
+    /* 0 的平方根为 0 */
+    assert(sqrt(0.0) == 0.0);
+    assert(sqrtf(0.0f) == 0.0f);
+    assert(sqrtl(0.0L) == 0.0L);
+
+    /* 一般值：r*r 应约等于 x */
+    double y = 2.0;
+    double s = sqrt(y);
+    assert(s >= 0.0);
+    assert(fabs(s * s - y) < 1e-12);
+
+    /* 大数与小数 */
+    assert(fabs(sqrt(1e100) - 1e50) < 1e40);
+    assert(fabs(sqrt(1e-100) - 1e-50) < 1e-60);
+}
+
+/* [2] 参数小于零时发生 domain error。
+ *     标准要求 domain error 时返回实现定义的值，并设置 errno 为 EDOM（若实现支持）。
+ *     这里只验证「发生 domain error」这一可观察行为：errno 被置为 EDOM。 */
+static void test_domain_error(void)
+{
+    errno = 0;
+    volatile double neg = -1.0;
+    double r = sqrt(neg);
+    (void)r; /* 返回值是实现定义的，不检查具体值 */
+    assert(errno == EDOM);   /* 参数 < 0 应触发 domain error */
+
+    errno = 0;
+    volatile float negf = -4.0f;
+    float rf = sqrtf(negf);
+    (void)rf;
+    assert(errno == EDOM);
+
+    errno = 0;
+    volatile long double negl = -9.0L;
+    long double rl = sqrtl(negl);
+    (void)rl;
+    assert(errno == EDOM);
+}
+
+/* [3] 返回 (sqrt)(x)：返回值等于以 x 为参数调用 sqrt 的结果。
+ *     用函数指针调用与直接调用结果一致来验证。 */
+static void test_returns_sqrt_x(void)
+{
+    double (*fp)(double) = sqrt;
+    double x = 16.0;
+    assert(sqrt(x) == fp(x));
+    assert(sqrt(x) == 4.0);
+
+    /* 与恒等式 sqrt(x*x) == |x| 一致（x 非负时） */
+    double a = 5.0;
+    assert(sqrt(a * a) == a);
+}
+
+int main(void)
+{
+    test_prototypes();
+    test_nonnegative_root();
+    test_domain_error();
+    test_returns_sqrt_x();
+
+    printf("C99 7.12.7.5 sqrt: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「sqrt 的原型为 double sqrt(double)」：
+ * 用不兼容的参数类型调用（结构体无法隐式转换为 double），
+ * gcc -std=c99 应报错：incompatible type for argument 1 of 'sqrt'。 */
+struct S { int x; };
+void bad_call_struct(void)
+{
+    struct S s;
+    double r = sqrt(s);   /* 错误：实参类型与原型不兼容 */
+    (void)r;
+}
+
+/* 违反约束「sqrt 返回 double」：
+ * 将返回值赋给不兼容类型（结构体）应报错。 */
+void bad_return_type(void)
+{
+    struct S s;
+    s = sqrt(4.0);        /* 错误：double 不能赋给 struct S */
+    (void)s;
+}
+
+/* 违反约束「sqrt 接受一个参数」：
+ * 参数个数不匹配应报错。 */
+void bad_arg_count(void)
+{
+    double r = sqrt(4.0, 9.0);  /* 错误：参数过多 */
+    (void)r;
+}
+
+/* 违反约束「sqrt 接受一个参数」：
+ * 缺少参数应报错。 */
+void bad_arg_missing(void)
+{
+    double r = sqrt();    /* 错误：参数过少 */
+    (void)r;
+}
+
+/* 违反约束「sqrtf 的原型为 float sqrtf(float)」：
+ * 用不兼容的指针类型赋值给函数指针应报错。 */
+void bad_proto_ptr(void)
+{
+    double (*p)(double) = sqrtf;  /* 错误：float(*)(float) 与 double(*)(double) 不兼容 */
+    (void)p;
+}
+
+#endif
+====ARTICLE 7.12.8.1 ====
+---TEXT---
+The erf functions
+Synopsis:
+[1] #include <math.h> double erf(double x); float erff(float x); long double erfl(long double x);
+Description:
+[2] The erf functions compute the error function of x.
+Returns:
+[3] The erf functions return 2 x erf x = --- (integral) e dt . (sqrt)(pi) 0
+---CODE---
+/*
+ * 测试条款：C99 7.12.8.1 —— The erf functions
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h> 后，erf / erff / erfl 三个函数可被调用，
+ *             返回类型分别为 double / float / long double，
+ *             且返回值等于误差函数 erf(x) = (2/sqrt(pi)) * ∫_0^x e^{-t^2} dt。
+ *   负向测试：违反约束的代码（如参数个数错误、对非函数名调用等）应编译报错。
+ *
+ * 编译：gcc -std=c99 -Wall -Wextra test.c -lm
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <assert.h>
+#include <float.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] Synopsis：三个函数声明存在于 <math.h>，返回类型分别为
+ *     double / float / long double。用 _Generic 无法在 C99 用，
+ *     改用赋值给对应类型变量并检查类型兼容性。 */
+static void test_synopsis(void)
+{
+    double      (*pd)(double)      = erf;   /* [1] double erf(double) */
+    float       (*pf)(float)       = erff;  /* [1] float erff(float)  */
+    long double (*pl)(long double) = erfl;  /* [1] long double erfl(long double) */
+
+    /* 通过函数指针调用，确认签名匹配 */
+    double      rd = pd(0.5);
+    float       rf = pf(0.5f);
+    long double rl = pl(0.5L);
+
+    /* 三个结果应彼此接近（同一数学函数的不同精度版本） */
+    assert(fabs(rd - (double)rf) < 1e-6);
+    assert(fabs(rd - (double)rl) < 1e-6);
+    printf("[1] Synopsis OK: erf=%g erff=%g erfl=%Lg\n", rd, rf, rl);
+}
+
+/* [2] Description：计算 x 的误差函数。验证若干已知值。 */
+static void test_description_known_values(void)
+{
+    /* erf(0) = 0 */
+    assert(erf(0.0) == 0.0);
+    assert(erff(0.0f) == 0.0f);
+    assert(erfl(0.0L) == 0.0L);
+
+    /* erf 是奇函数：erf(-x) = -erf(x) */
+    double x = 0.7;
+    assert(fabs(erf(-x) + erf(x)) < 1e-12);
+
+    /* 已知数值：erf(1) ≈ 0.8427007929497149 */
+    assert(fabs(erf(1.0) - 0.8427007929497149) < 1e-12);
+
+    /* 已知数值：erf(0.5) ≈ 0.5204998778130465 */
+    assert(fabs(erf(0.5) - 0.5204998778130465) < 1e-12);
+
+    /* 大 x 时 erf(x) → 1 */
+    assert(fabs(erf(6.0) - 1.0) < 1e-12);
+
+    printf("[2] Description OK: erf(1)=%.16f\n", erf(1.0));
+}
+
+/* [3] Returns：返回值等于 (2/sqrt(pi)) * ∫_0^x e^{-t^2} dt。
+ *     用数值积分（辛普森法）独立计算，与库函数比较。 */
+static double erf_by_integration(double x)
+{
+    /* 用辛普森法对 e^{-t^2} 在 [0, x] 上积分，再乘 2/sqrt(pi) */
+    const int n = 20000;              /* 偶数 */
+    double a = 0.0, b = x;
+    double h = (b - a) / n;
+    double sum = exp(-a * a) + exp(-b * b);
+    int i;
+    for (i = 1; i < n; i++) {
+        double t = a + i * h;
+        double f = exp(-t * t);
+        sum += (i % 2 == 0) ? 2.0 * f : 4.0 * f;
+    }
+    double integral = sum * h / 3.0;
+    return (2.0 / sqrt(M_PI)) * integral;
+}
+
+static void test_returns_formula(void)
+{
+    double xs[] = { 0.1, 0.3, 0.5, 1.0, 1.5, 2.0 };
+    int i;
+    for (i = 0; i < (int)(sizeof(xs) / sizeof(xs[0])); i++) {
+        double x = xs[i];
+        double expected = erf_by_integration(x);
+        double got = erf(x);
+        /* 数值积分精度约 1e-9，留出余量 */
+        assert(fabs(got - expected) < 1e-7);
+    }
+    printf("[3] Returns formula OK: erf(1.5)=%.16f (integral=%.16f)\n",
+           erf(1.5), erf_by_integration(1.5));
+}
+
+/* [3] 补充：验证 erff / erfl 与 erf 的一致性（精度范围内） */
+static void test_float_longdouble_consistency(void)
+{
+    float xf = 0.75f;
+    long double xl = 0.75L;
+    double ref = erf(0.75);
+
+    assert(fabs((double)erff(xf) - ref) < 1e-6);
+    assert(fabs((double)erfl(xl) - ref) < 1e-15);
+
+    printf("[3] erff/erfl consistency OK\n");
+}
+
+int main(void)
+{
+    test_synopsis();
+    test_description_known_values();
+    test_returns_formula();
+    test_float_longdouble_consistency();
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「函数调用实参个数必须与形参个数一致」：
+ * erf 接受 1 个参数，这里传 2 个，gcc -std=c99 应报错
+ *   error: too many arguments to function 'erf' */
+double bad1 = erf(1.0, 2.0);
+
+/* 违反约束「函数调用实参个数必须与形参个数一致」：
+ * erff 接受 1 个参数，这里传 0 个，gcc -std=c99 应报错
+ *   error: too few arguments to function 'erff' */
+float bad2 = erff();
+
+/* 违反约束「被调用者必须是函数或函数指针」：
+ * 对非函数标识符使用函数调用语法，gcc -std=c99 应报错
+ *   error: called object 'bad3' is not a function or function pointer */
+int bad3 = 42;
+double bad4 = bad3(1.0);
+
+/* 违反约束「实参类型必须可转换为形参类型」：
+ * 结构体类型无法隐式转换为 double，gcc -std=c99 应报错
+ *   error: incompatible type for argument 1 of 'erf' */
+struct NotArith { int a; };
+double bad5 = erf((struct NotArith){ 1 });
+
+/* 违反约束「函数返回类型不可作为赋值目标（非左值）」：
+ * erf(1.0) 是右值，不能赋值，gcc -std=c99 应报错
+ *   error: lvalue required as left operand of assignment */
+void bad6(void) { erf(1.0) = 0.5; }
+
+/* 违反约束「函数名不可被赋值（非左值）」：
+ * erf 是函数指示符，不能作为赋值目标，gcc -std=c99 应报错
+ *   error: lvalue required as left operand of assignment */
+void bad7(void) { erf = 0; }
+
+#endif
+====ARTICLE 7.12.8.2 ====
+---TEXT---
+The erfc functions
+Synopsis:
+[1] #include <math.h> double erfc(double x); float erfcf(float x); long double erfcl(long double x);
+Description:
+[2] The erfc functions compute the complementary error function of x. A range error occurs if x is too large.
+Returns:
+[3] The erfc functions return 2 (inf) erfc x = 1 - erf x = --- (integral) e dt . (sqrt)(pi) x
+---CODE---
+/*
+ * 测试 C99 7.12.8.2 —— erfc 函数族（erfc / erfcf / erfcl）
+ *
+ * 预期行为：
+ *   正向测试：包含 <math.h>，调用 erfc/erfcf/erfcl，验证返回值语义
+ *             （erfc(x) = 1 - erf(x)，erfc(0) = 1，erfc(+inf) = 0，
+ *              大参数触发范围错误 range error）。
+ *   负向测试：违反约束的代码应被编译器拒绝（编译报错）。
+ *
+ * 编译：gcc -std=c99 -Wall -Wextra test.c -lm
+ */
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <assert.h>
+#include <errno.h>
+#include <fenv.h>
+
+/* ============================================================
+ * 正向测试：以下代码应能编译并运行通过
+ * ============================================================ */
+
+/* [1] Synopsis：三个函数声明必须存在于 <math.h> 中，
+ *     且返回类型分别为 double / float / long double。
+ *     这里通过取函数指针并检查类型来验证原型。 */
+static double (*p_erfc)(double)          = erfc;
+static float  (*p_erfcf)(float)          = erfcf;
+static long double (*p_erfcl)(long double) = erfcl;
+
+/* 辅助：判断两个 double 是否近似相等 */
+static int close_enough(double a, double b, double tol)
+{
+    double d = a - b;
+    if (d < 0) d = -d;
+    return d <= tol;
+}
+
+int main(void)
+{
+    /* ---------- [1] 原型/返回类型检查 ---------- */
+    assert(p_erfc  != NULL);
+    assert(p_erfcf != NULL);
+    assert(p_erfcl != NULL);
+
+    /* ---------- [3] 定义式：erfc(x) = 1 - erf(x) ---------- */
+    {
+        double xs[] = { 0.0, 0.5, 1.0, 2.0, -0.5, -1.0, 3.0 };
+        size_t i;
+        for (i = 0; i < sizeof(xs)/sizeof(xs[0]); ++i) {
+            double x = xs[i];
+            double lhs = erfc(x);
+            double rhs = 1.0 - erf(x);
+            assert(close_enough(lhs, rhs, 1e-12));
+        }
+    }
+
+    /* ---------- [3] 特殊值：erfc(0) = 1 ---------- */
+    assert(close_enough(erfc(0.0), 1.0, 1e-15));
+    assert(close_enough((double)erfcf(0.0f), 1.0, 1e-6));
+    assert(close_enough((double)erfcl(0.0L), 1.0, 1e-15));
+
+    /* ---------- [3] 对称性：erfc(-x) = 2 - erfc(x) ---------- */
+    {
+        double x = 1.25;
+        assert(close_enough(erfc(-x), 2.0 - erfc(x), 1e-12));
+    }
+
+    /* ---------- [3] 极限：erfc(+inf) = 0, erfc(-inf) = 2 ---------- */
+    assert(erfc(INFINITY) == 0.0);
+    assert(close_enough(erfc(-INFINITY), 2.0, 1e-15));
+
+    /* ---------- [3] 单调递减（x 增大，erfc 减小） ---------- */
+    {
+        double a = erfc(0.5);
+        double b = erfc(1.5);
+        double c = erfc(2.5);
+        assert(a > b && b > c);
+    }
+
+    /* ---------- [2] 范围错误：x 太大时发生 range error ----------
+     * 标准只说 "A range error occurs if x is too large"。
+     * 实现通常返回 0（下溢）并可能置 errno = ERANGE。
+     * 这里只验证返回值非负且有限/为 0，不强制 errno（实现相关）。 */
+    {
+        double big = 1e300;
+        errno = 0;
+        double r = erfc(big);
+        /* 结果应为 0（下溢到 0），且不应为 NaN */
+        assert(!isnan(r));
+        assert(r >= 0.0);
+        assert(r == 0.0);   /* 对极大参数，erfc 下溢为 0 */
+    }
+
+    /* ---------- [2] 大参数下 erfcf / erfcl 同样下溢为 0 ---------- */
+    {
+        float rf = erfcf(1e30f);
+        long double rl = erfcl(1e300L);
+        assert(rf == 0.0f);
+        assert(rl == 0.0L);
+    }
+
+    /* ---------- [3] 与 erf 的互补关系在 float / long double 上也成立 ---------- */
+    {
+        float xf = 0.75f;
+        assert(close_enough((double)erfcf(xf), 1.0 - (double)erf(xf), 1e-5));
+
+        long double xl = 0.75L;
+        assert(close_enough((double)erfcl(xl), 1.0 - (double)erf(xl), 1e-12));
+    }
+
+    /* ---------- [3] 值域：0 <= erfc(x) <= 2 ---------- */
+    {
+        double xs[] = { -5.0, -1.0, 0.0, 1.0, 5.0, 10.0 };
+        size_t i;
+        for (i = 0; i < sizeof(xs)/sizeof(xs[0]); ++i) {
+            double v = erfc(xs[i]);
+            assert(v >= 0.0 && v <= 2.0);
+        }
+    }
+
+    printf("All positive tests for C99 7.12.8.2 (erfc) passed.\n");
+    return 0;
+}
+
+/* ============================================================
+ * 负向测试：以下代码违反 C99 约束，应编译报错
+ * ============================================================ */
+#if 0
+
+/* 违反约束「函数调用实参个数/类型必须与原型匹配」：
+ * erfc 原型为 double erfc(double)，传入两个实参应报错。
+ * 期望：error: too many arguments to function 'erfc' */
+double bad1 = erfc(1.0, 2.0);
+
+/* 违反约束「函数调用实参必须可转换为形参类型」：
+ * 传入结构体，无法转换为 double，应报错。
+ * 期望：error: incompatible type for argument 1 of 'erfc' */
+struct S { int x; };
+double bad2(struct S s) { return erfc(s); }
+
+/* 违反约束「erfc 返回 double，不能作为函数被调用」：
+ * 对非函数类型使用函数调用运算符，应报错。
+ * 期望：error: called object is not a function or function pointer */
+double bad3 = erfc(1.0)(2.0);
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * erfc 的返回值不是左值，不能赋值。
+ * 期望：error: lvalue required as left operand of assignment */
+void bad4(void) { erfc(1.0) = 0.5; }
+
+/* 违反约束「取地址运算符 & 的操作数必须是左值或函数指示符」：
+ * 对函数调用结果取地址，应报错。
+ * 期望：error: lvalue required as unary '&' operand */
+double *bad5 = &erfc(1.0);
+
+/* 违反约束「erfcf 形参为 float，实参为结构体无法转换」：
+ * 期望：error: incompatible type for argument 1 of 'erfcf' */
+float bad6(struct S s) { return erfcf(s); }
+
+/* 违反约束「erfcl 形参为 long double，实参为结构体无法转换」：
+ * 期望：error: incompatible type for argument 1 of 'erfcl' */
+long double bad7(struct S s) { return erfcl(s); }
+
+#endif

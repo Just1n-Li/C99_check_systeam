@@ -1,0 +1,146 @@
+=== TEXT ===
+Wide character case mapping utilities
+[1] The header <wctype.h> declares several functions useful for mapping wide characters.
+
+=== CODE ===
+/*
+ * 测试目标：C99 7.25.3 —— Wide character case mapping utilities
+ * 条款原文：
+ *   [1] The header <wctype.h> declares several functions useful for
+ *       mapping wide characters.
+ *
+ * 预期行为：
+ *   - 正向测试：包含 <wctype.h>，使用其中声明的宽字符大小写映射函数
+ *     （towlower / towupper / iswlower / iswupper 等），程序应能编译并运行通过。
+ *   - 负向测试：违反约束的代码片段应导致编译报错（统一放在 #if 0 中）。
+ *
+ * 说明：7.25.3 本身只声明 <wctype.h> 提供宽字符映射函数；本测试覆盖该头文件
+ *       所声明的宽字符大小写映射相关函数（towlower、towupper、iswlower、
+ *       iswupper、wint_t 类型、WEOF 宏）的可用性与基本语义。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] <wctype.h> 声明了用于宽字符映射的函数。
+ *     验证头文件确实提供了 towlower / towupper / iswlower / iswupper
+ *     以及 wint_t 类型和 WEOF 宏。 */
+
+/* 验证 wint_t 类型存在且可容纳 WEOF */
+static wint_t g_wt = WEOF;
+
+/* 验证函数指针类型与标准声明兼容（可赋值即说明声明存在且签名匹配） */
+static wint_t (*p_towlower)(wint_t) = towlower;
+static wint_t (*p_towupper)(wint_t) = towupper;
+static int    (*p_iswlower)(wint_t) = iswlower;
+static int    (*p_iswupper)(wint_t) = iswupper;
+
+int main(void)
+{
+    /* 使用 "C" 区域设置，保证 ASCII 字母的大小写映射行为可预期 */
+    setlocale(LC_ALL, "C");
+
+    /* [1] 基本大小写映射：小写 -> 大写 */
+    assert(towupper(L'a') == L'A');
+    assert(towupper(L'z') == L'Z');
+    assert(towupper(L'A') == L'A');   /* 已是大写，保持不变 */
+
+    /* [1] 基本大小写映射：大写 -> 小写 */
+    assert(towlower(L'A') == L'a');
+    assert(towlower(L'Z') == L'z');
+    assert(towlower(L'a') == L'a');   /* 已是小写，保持不变 */
+
+    /* [1] 非字母宽字符应保持不变 */
+    assert(towupper(L'0') == L'0');
+    assert(towlower(L'0') == L'0');
+    assert(towupper(L' ') == L' ');
+    assert(towlower(L' ') == L' ');
+
+    /* [1] 分类函数与映射函数一致 */
+    assert(iswlower(L'a') != 0);
+    assert(iswlower(L'A') == 0);
+    assert(iswupper(L'A') != 0);
+    assert(iswupper(L'a') == 0);
+    assert(iswlower(L'0') == 0);
+    assert(iswupper(L'0') == 0);
+
+    /* [1] 映射结果与分类函数互相印证 */
+    {
+        wchar_t c;
+        for (c = L'a'; c <= L'z'; ++c) {
+            wint_t up = towupper((wint_t)c);
+            assert(up == (wint_t)(c - L'a' + L'A'));
+            assert(iswupper(up) != 0);
+        }
+        for (c = L'A'; c <= L'Z'; ++c) {
+            wint_t lo = towlower((wint_t)c);
+            assert(lo == (wint_t)(c - L'A' + L'a'));
+            assert(iswlower(lo) != 0);
+        }
+    }
+
+    /* [1] WEOF 是 wint_t 类型的值，且不等于任何有效宽字符 */
+    assert(g_wt == WEOF);
+    assert(WEOF != (wint_t)L'A');
+
+    /* [1] 通过函数指针调用，验证声明可用 */
+    assert(p_towupper(L'q') == L'Q');
+    assert(p_towlower(L'Q') == L'q');
+    assert(p_iswlower(L'q') != 0);
+    assert(p_iswupper(L'Q') != 0);
+
+    /* [1] 幂等性：连续映射两次结果不变 */
+    assert(towupper(towupper(L'a')) == L'A');
+    assert(towlower(towlower(L'A')) == L'a');
+
+    printf("C99 7.25.3 wide character case mapping utilities: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「towlower / towupper 的参数类型为 wint_t」：
+ * 传入不兼容的指针类型，gcc -std=c99 应报错（参数类型不匹配）。 */
+void bad_arg_type(void)
+{
+    char *s = "abc";
+    (void)towupper(s);   /* error: 期望 wint_t，实参为 char* */
+}
+
+/* 违反约束「iswlower / iswupper 的参数类型为 wint_t」：
+ * 传入结构体类型，gcc -std=c99 应报错。 */
+struct S { int x; };
+void bad_arg_struct(struct S s)
+{
+    (void)iswlower(s);   /* error: 期望 wint_t，实参为 struct S */
+}
+
+/* 违反约束「函数返回值不可作为左值赋值」：
+ * towupper 返回 wint_t（非左值），对其赋值应编译报错。 */
+void bad_assign_to_return(void)
+{
+    towupper(L'a') = L'B';   /* error: 赋值目标不是左值 */
+}
+
+/* 违反约束「函数返回值不可取地址」：
+ * 对函数调用结果取地址应编译报错。 */
+void bad_take_address(void)
+{
+    wint_t *p = &towlower(L'A');   /* error: 不能取非左值的地址 */
+    (void)p;
+}
+
+/* 违反约束「WEOF 是宏，不是可修改的左值」：
+ * 对宏展开后的常量赋值应编译报错。 */
+void bad_assign_weof(void)
+{
+    WEOF = 0;   /* error: 赋值目标不是左值 */
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,247 @@
+/*
+ * 测试条款：C99 7.25.2.1  Wide character classification functions
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 函数当且仅当参数 wc 符合描述时返回非零（true）。
+ *   [2] 对每个“经由 wctob 对应到某个单字节字符、且该单字节字符在 7.4.1
+ *       中对应分类函数返回 true”的宽字符，本子条款对应函数返回 true；
+ *       例外：iswgraph / iswpunct 对“既 printing 又 white-space 的
+ *       非 L' ' 宽字符”可能不同。
+ *   Footnote 304：isalpha(wctob(wc)) 为真 => iswalpha(wc) 为真；
+ *                 isgraph(wctob(wc)) 为真 => iswgraph(wc) 或
+ *                 (iswprint(wc) && iswspace(wc)) 之一为真，但不同时为真。
+ *   Forward reference: wctob (7.24.6.1.2)。
+ */
+
+#include <assert.h>
+#include <stdio.h>
+#include <wchar.h>
+#include <wctype.h>
+#include <ctype.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 返回值语义：函数返回“非零”表示 true，返回 0 表示 false。
+ *     用 !!(x) 归一化，验证“非零/零”的布尔语义。 */
+static void test_boolean_semantics(void)
+{
+    /* 对任意宽字符，分类函数的结果必须是 0 或非零（布尔可判定）。 */
+    wchar_t samples[] = { L'A', L'a', L'0', L' ', L'\t', L'\n',
+                          L'!', L'.', L'\x00A0', L'\x4E2D' };
+    size_t i;
+    for (i = 0; i < sizeof(samples) / sizeof(samples[0]); ++i) {
+        wchar_t wc = samples[i];
+        int r;
+
+        r = iswalnum(wc);  assert(r == 0 || r != 0);
+        r = iswalpha(wc);  assert(r == 0 || r != 0);
+        r = iswblank(wc);  assert(r == 0 || r != 0);
+        r = iswcntrl(wc);  assert(r == 0 || r != 0);
+        r = iswdigit(wc);  assert(r == 0 || r != 0);
+        r = iswgraph(wc);  assert(r == 0 || r != 0);
+        r = iswlower(wc);  assert(r == 0 || r != 0);
+        r = iswprint(wc);  assert(r == 0 || r != 0);
+        r = iswpunct(wc);  assert(r == 0 || r != 0);
+        r = iswspace(wc);  assert(r == 0 || r != 0);
+        r = iswupper(wc);  assert(r == 0 || r != 0);
+        r = iswxdigit(wc); assert(r == 0 || r != 0);
+    }
+}
+
+/* [1] 具体分类语义：对已知字符验证 true/false。 */
+static void test_known_classifications(void)
+{
+    /* 字母 */
+    assert(iswalpha(L'A') != 0);
+    assert(iswalpha(L'z') != 0);
+    assert(iswalpha(L'0') == 0);
+    assert(iswalpha(L' ') == 0);
+
+    /* 数字 */
+    assert(iswdigit(L'0') != 0);
+    assert(iswdigit(L'9') != 0);
+    assert(iswdigit(L'A') == 0);
+
+    /* 字母或数字 */
+    assert(iswalnum(L'A') != 0);
+    assert(iswalnum(L'7') != 0);
+    assert(iswalnum(L'!') == 0);
+
+    /* 十六进制数字 */
+    assert(iswxdigit(L'0') != 0);
+    assert(iswxdigit(L'f') != 0);
+    assert(iswxdigit(L'F') != 0);
+    assert(iswxdigit(L'g') == 0);
+
+    /* 小写 / 大写 */
+    assert(iswlower(L'a') != 0);
+    assert(iswlower(L'A') == 0);
+    assert(iswupper(L'A') != 0);
+    assert(iswupper(L'a') == 0);
+
+    /* 空白 */
+    assert(iswspace(L' ') != 0);
+    assert(iswspace(L'\t') != 0);
+    assert(iswspace(L'\n') != 0);
+    assert(iswspace(L'A') == 0);
+
+    /* 空白（blank：空格与水平制表） */
+    assert(iswblank(L' ') != 0);
+    assert(iswblank(L'\t') != 0);
+    assert(iswblank(L'\n') == 0);
+
+    /* 控制字符 */
+    assert(iswcntrl(L'\n') != 0);
+    assert(iswcntrl(L'\t') != 0);
+    assert(iswcntrl(L'A') == 0);
+
+    /* 可打印 / 图形 / 标点 */
+    assert(iswprint(L'A') != 0);
+    assert(iswprint(L' ') != 0);
+    assert(iswgraph(L'A') != 0);
+    assert(iswgraph(L' ') == 0);   /* 空格是 printing 但非 graph */
+    assert(iswpunct(L'!') != 0);
+    assert(iswpunct(L'.') != 0);
+    assert(iswpunct(L'A') == 0);
+    assert(iswpunct(L' ') == 0);
+}
+
+/* [2] 与单字节分类函数的一致性（经由 wctob）。
+ *     对每个可经 wctob 映射到单字节的宽字符 wc：
+ *       若 isXXX((unsigned char)wctob(wc)) 为真，则 iswXXX(wc) 为真。
+ *     这里用 ASCII 字符集（C locale 下 wctob 恒等映射）验证。 */
+static void test_consistency_with_byte_classification(void)
+{
+    int c;
+    for (c = 0; c < 128; ++c) {
+        wchar_t wc = (wchar_t)c;
+        int b = wctob(wc);
+
+        /* wctob 对可映射字符返回对应单字节值 */
+        if (b == EOF)
+            continue;
+
+        /* [2] 一致性：单字节分类为真 => 宽字符分类为真 */
+        if (isalpha(b))  assert(iswalpha(wc)  != 0);
+        if (isdigit(b))  assert(iswdigit(wc)  != 0);
+        if (isalnum(b))  assert(iswalnum(wc)  != 0);
+        if (isxdigit(b)) assert(iswxdigit(wc) != 0);
+        if (islower(b))  assert(iswlower(wc)  != 0);
+        if (isupper(b))  assert(iswupper(wc)  != 0);
+        if (isspace(b))  assert(iswspace(wc)  != 0);
+        if (isblank(b))  assert(iswblank(wc)  != 0);
+        if (iscntrl(b))  assert(iswcntrl(wc)  != 0);
+        if (isprint(b))  assert(iswprint(wc)  != 0);
+        if (ispunct(b))  assert(iswpunct(wc)  != 0);
+
+        /* [2] 例外条款：isgraph / iswpunct 对“既 printing 又
+         *     white-space 的非 L' ' 宽字符”可能不同。
+         *     对 ASCII 而言，唯一 printing 且 white-space 的字符是
+         *     空格 L' '，因此对非空格字符，isgraph 应一致。 */
+        if (isgraph(b) && wc != L' ') {
+            assert(iswgraph(wc) != 0);
+        }
+    }
+}
+
+/* Footnote 304：isalpha(wctob(wc)) 为真 => iswalpha(wc) 为真。 */
+static void test_footnote_304_alpha(void)
+{
+    int c;
+    for (c = 0; c < 128; ++c) {
+        wchar_t wc = (wchar_t)c;
+        int b = wctob(wc);
+        if (b == EOF)
+            continue;
+        if (isalpha(b)) {
+            assert(iswalpha(wc) != 0);
+        }
+    }
+}
+
+/* Footnote 304：isgraph(wctob(wc)) 为真 =>
+ *   iswgraph(wc) 或 (iswprint(wc) && iswspace(wc)) 之一为真，但不同时为真。
+ *   对 ASCII 非空格字符，iswgraph(wc) 应为真。 */
+static void test_footnote_304_graph(void)
+{
+    int c;
+    for (c = 0; c < 128; ++c) {
+        wchar_t wc = (wchar_t)c;
+        int b = wctob(wc);
+        if (b == EOF)
+            continue;
+        if (isgraph(b)) {
+            int g = (iswgraph(wc) != 0);
+            int p = (iswprint(wc) != 0) && (iswspace(wc) != 0);
+            /* 至少一个为真 */
+            assert(g || p);
+            /* 不同时为真 */
+            assert(!(g && p));
+        }
+    }
+}
+
+/* [2] 与 wctob 的交互：wctob 对不可映射字符返回 EOF，
+ *     此时不要求一致性（条款只对“可对应到单字节”的宽字符作要求）。 */
+static void test_wctob_forward_reference(void)
+{
+    /* 在 C locale 下，ASCII 字符可映射 */
+    assert(wctob(L'A') == 'A');
+    assert(wctob(L'0') == '0');
+    assert(wctob(L' ') == ' ');
+
+    /* 不可映射的宽字符返回 EOF（此处用超出单字节范围的字符） */
+    assert(wctob((wchar_t)0x4E2D) == EOF);
+}
+
+int main(void)
+{
+    /* 使用 C locale，保证 wctob 对 ASCII 恒等映射，便于一致性测试。 */
+    setlocale(LC_ALL, "C");
+
+    test_boolean_semantics();
+    test_known_classifications();
+    test_consistency_with_byte_classification();
+    test_footnote_304_alpha();
+    test_footnote_304_graph();
+    test_wctob_forward_reference();
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「7.25.2.1 各函数参数类型为 wint_t」：
+ * 传入结构体类型实参，gcc -std=c99 应报错
+ * （incompatible type for argument / passing struct to wint_t）。 */
+struct NotWint { int x; } bad_arg;
+iswalpha(bad_arg);
+
+/* 违反约束「7.25.2.1 各函数参数类型为 wint_t」：
+ * 传入指针类型实参，gcc -std=c99 应报错。 */
+int *p = 0;
+iswdigit(p);
+
+/* 违反约束「7.25.2.1 各函数参数类型为 wint_t」：
+ * 传入浮点类型实参，gcc -std=c99 应报错。 */
+double d = 1.0;
+iswspace(d);
+
+/* 违反约束「7.25.2.1 各函数参数类型为 wint_t」：
+ * 传入字符串字面量（char*），gcc -std=c99 应报错。 */
+iswpunct("x");
+
+/* 违反约束「7.25.2.1 各函数参数类型为 wint_t」：
+ * 传入 void 表达式，gcc -std=c99 应报错。 */
+void f(void);
+iswgraph(f());
+
+#endif

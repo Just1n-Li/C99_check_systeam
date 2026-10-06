@@ -1,0 +1,116 @@
+/*
+ * 验证 C99 条款 6.2.4 (Storage durations of objects)
+ * 预期行为：正向测试运行通过，负向测试编译报错。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 三种存储期：静态、自动、分配 */
+static int static_var; /* [3] 静态存储期 */
+int global_var;        /* [3] 外部链接，静态存储期 */
+
+void test_storage_durations(void) {
+    int auto_var;             /* [4] 无链接且无 static，自动存储期 */
+    int *alloc_var = malloc(sizeof(int)); /* [1] 分配存储期 (7.20.3) */
+
+    static_var = 1;
+    global_var = 2;
+    auto_var = 3;
+    *alloc_var = 4;
+
+    assert(static_var == 1);
+    assert(global_var == 2);
+    assert(auto_var == 3);
+    assert(*alloc_var == 4);
+
+    free(alloc_var); /* 分配存储期结束 */
+}
+
+/* [2] 对象在生命周期内具有常量地址，并保留最后存储的值 */
+/* [3] 静态存储期：生命周期为整个程序执行期，只初始化一次 */
+static int *static_ptr = NULL;
+void test_constant_address_and_retain(void) {
+    static int s = 42; /* [3] 静态存储期 */
+    if (static_ptr != NULL) {
+        /* [2] 常量地址：两次进入函数，地址相同 */
+        assert(static_ptr == &s);
+        /* [2] 保留最后存储的值 */
+        assert(*static_ptr == 42);
+        *static_ptr = 100;
+        assert(*static_ptr == 100);
+    } else {
+        static_ptr = &s;
+    }
+}
+
+/* [5] 非VLA自动对象：进入块时创建，结束时销毁；递归创建新实例；每次到达声明处执行初始化 */
+int test_auto_lifetime_recursive(int n) {
+    if (n == 0) return 0;
+    int local = n; /* [5] 每次到达声明处初始化 */
+    return local + test_auto_lifetime_recursive(n - 1); /* [5] 递归进入块，创建新实例 */
+}
+
+/* [6] VLA自动对象：生命周期从声明到离开作用域；递归创建新实例 */
+int test_vla_lifetime_recursive(int n) {
+    if (n == 0) return 0;
+    int vla[n]; /* [6] VLA，生命周期从声明到离开作用域 */
+    int sum = 0;
+    for (int i = 0; i < n; i++) {
+        vla[i] = i;
+        sum += vla[i];
+    }
+    return sum + test_vla_lifetime_recursive(n - 1); /* [6] 递归创建新实例 */
+}
+
+/* 脚注 26: volatile 对象的最后存储不需要在程序中显式进行 */
+static volatile int vol_var = 0;
+void test_volatile_retain(void) {
+    vol_var = 10;
+    /* 读取 volatile 变量，验证其保留了值（可能被外部修改，但此处验证语义） */
+    assert(vol_var == 10);
+}
+
+int main(void) {
+    test_storage_durations();
+
+    /* [2] 测试常量地址和保留值 */
+    test_constant_address_and_retain();
+    test_constant_address_and_retain();
+
+    /* [5] 测试非VLA自动对象递归：1+2+3 = 6 */
+    assert(test_auto_lifetime_recursive(3) == 6);
+
+    /* [6] 测试VLA自动对象递归：0+1+3+6 = 10 */
+    assert(test_vla_lifetime_recursive(3) == 10);
+
+    test_volatile_retain();
+
+    printf("6.2.4 All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+/* 违反约束：VLA 不能具有静态存储期 (6.7.5.2 约束，与 6.2.4 [3] 相关) */
+void bad_vla_static(void) {
+    static int n = 5;
+    static int vla[n]; /* gcc -std=c99 应报错：VLA 不能具有静态存储期 */
+}
+
+/* 违反约束：对非左值赋值 (6.5.3 约束，与 6.2.4 [2] 对象属性相关) */
+struct S { int x; };
+struct S get_s(void) { struct S s = {1}; return s; }
+void bad_non_lvalue_assign(void) {
+    get_s().x = 2; /* gcc -std=c99 应报错：不能对非左值赋值 */
+}
+
+/* 违反约束：对非左值（强制转换结果）赋值 */
+void bad_cast_assign(void) {
+    int a = 0;
+    (int)a = 5; /* gcc -std=c99 应报错：不能对非左值赋值 */
+}
+#endif

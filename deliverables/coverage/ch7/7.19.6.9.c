@@ -1,0 +1,281 @@
+/*
+ * 测试条款：C99 7.19.6.9  The vfscanf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型 / 头文件 <stdarg.h> <stdio.h>
+ *   [2] 等价于 fscanf，用 va_list 替换可变参数；arg 须由 va_start 初始化；
+ *       vfscanf 不调用 va_end。
+ *   [3] 返回值：输入失败且未发生任何转换时返回 EOF；
+ *       否则返回成功赋值的输入项个数（可能少于提供项，甚至为 0）。
+ */
+
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <assert.h>
+
+/* ============================================================
+ * 辅助函数：把 vfscanf 包装成可变参数函数，用于正向测试
+ * ============================================================ */
+static int my_scan(FILE *stream, const char *format, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, format);          /* [2] arg 必须由 va_start 初始化 */
+    ret = vfscanf(stream, format, ap);
+    /* [2] vfscanf 不调用 va_end，因此由调用者负责 */
+    va_end(ap);
+    return ret;
+}
+
+/* ============================================================
+ * 正向测试：以下代码应能编译并运行通过
+ * ============================================================ */
+static void positive_tests(void)
+{
+    FILE *fp;
+    int ret;
+    int i = 0;
+    double d = 0.0;
+    char s[64];
+    char c = 0;
+
+    /* ---------- [1] 原型与头文件：能取地址、能调用 ---------- */
+    {
+        /* 若 <stdio.h> 未声明 vfscanf，此处会因隐式声明而告警/报错 */
+        int (*fp_vfscanf)(FILE * restrict, const char * restrict, va_list) = vfscanf;
+        assert(fp_vfscanf != NULL);
+    }
+
+    /* ---------- [2] 等价于 fscanf：基本转换 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fputs("42 3.5 hello", fp);
+    rewind(fp);
+
+    ret = my_scan(fp, "%d %lf %63s", &i, &d, s);
+    assert(ret == 3);              /* [3] 返回成功赋值的项数 */
+    assert(i == 42);
+    assert(d == 3.5);
+    assert(strcmp(s, "hello") == 0);
+    fclose(fp);
+
+    /* ---------- [2] 与 fscanf 行为一致：逐项比较 ---------- */
+    {
+        FILE *f1 = tmpfile();
+        FILE *f2 = tmpfile();
+        int a1 = 0, a2 = 0;
+        char b1[32], b2[32];
+
+        assert(f1 && f2);
+        fputs("7 world", f1);
+        fputs("7 world", f2);
+        rewind(f1);
+        rewind(f2);
+
+        int r1 = fscanf(f1, "%d %31s", &a1, b1);
+        int r2 = my_scan(f2, "%d %31s", &a2, b2);
+
+        assert(r1 == r2);
+        assert(a1 == a2);
+        assert(strcmp(b1, b2) == 0);
+
+        fclose(f1);
+        fclose(f2);
+    }
+
+    /* ---------- [3] 提前匹配失败：返回 0 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fputs("abc", fp);              /* 期望读整数，但输入是字母 */
+    rewind(fp);
+    i = -1;
+    ret = my_scan(fp, "%d", &i);
+    assert(ret == 0);              /* [3] 早期匹配失败，返回 0 */
+    assert(i == -1);               /* 未赋值 */
+    fclose(fp);
+
+    /* ---------- [3] 部分匹配：返回已赋值的项数（少于提供项） ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fputs("10 xyz", fp);           /* 第二个 %d 会失败 */
+    rewind(fp);
+    i = 0;
+    int j = -1;
+    ret = my_scan(fp, "%d %d", &i, &j);
+    assert(ret == 1);              /* [3] 只赋值了 1 项 */
+    assert(i == 10);
+    assert(j == -1);
+    fclose(fp);
+
+    /* ---------- [3] 输入失败且未发生任何转换：返回 EOF ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    /* 空文件：立即遇到输入失败，未发生任何转换 */
+    rewind(fp);
+    ret = my_scan(fp, "%d", &i);
+    assert(ret == EOF);            /* [3] 返回 EOF */
+    fclose(fp);
+
+    /* ---------- [3] 输入失败发生在任何转换之前：返回 EOF ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fputs("   ", fp);              /* 只有空白，无可用输入 */
+    rewind(fp);
+    ret = my_scan(fp, "%d", &i);
+    assert(ret == EOF);            /* [3] 空白耗尽后输入失败，返回 EOF */
+    fclose(fp);
+
+    /* ---------- [2] 多次调用共享同一 va_list 的推进（va_arg 语义） ---------- */
+    {
+        FILE *f = tmpfile();
+        assert(f != NULL);
+        fputs("1 2 3", f);
+        rewind(f);
+
+        /* 手动构造 va_list 并多次调用 vfscanf，验证 arg 可被推进 */
+        /* 这里用一个包装函数模拟：每次调用读取一个整数 */
+        int v1 = 0, v2 = 0, v3 = 0;
+        int r;
+        r = my_scan(f, "%d", &v1);
+        assert(r == 1 && v1 == 1);
+        r = my_scan(f, "%d", &v2);
+        assert(r == 1 && v2 == 2);
+        r = my_scan(f, "%d", &v3);
+        assert(r == 1 && v3 == 3);
+        fclose(f);
+    }
+
+    /* ---------- [2] 字符与字符串转换 ---------- */
+    fp = tmpfile();
+    assert(fp != NULL);
+    fputs("Z", fp);
+    rewind(fp);
+    ret = my_scan(fp, "%c", &c);
+    assert(ret == 1);
+    assert(c == 'Z');
+    fclose(fp);
+
+    printf("positive_tests: all assertions passed.\n");
+}
+
+/* ============================================================
+ * 负向测试：以下代码违反 C99 约束，应编译报错
+ * （统一放在 #if 0 中，保证本文件整体可编译运行）
+ * ============================================================ */
+#if 0
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 的第三个参数类型必须是 va_list。
+ * 传入 int* 而非 va_list，gcc -std=c99 应报类型不兼容错误。
+ * 期望报错：incompatible type for argument 3 of 'vfscanf'
+ * ------------------------------------------------------------ */
+void bad_arg_type(void)
+{
+    FILE *fp = tmpfile();
+    int x = 0;
+    int *p = &x;
+    vfscanf(fp, "%d", p);          /* 错误：第三参数应为 va_list */
+    fclose(fp);
+}
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 的第一个参数类型必须是 FILE *。
+ * 传入 int，gcc -std=c99 应报类型不兼容错误。
+ * 期望报错：incompatible type for argument 1 of 'vfscanf'
+ * ------------------------------------------------------------ */
+void bad_stream_type(void)
+{
+    va_list ap;
+    va_start(ap, 0);
+    vfscanf(42, "%d", ap);         /* 错误：第一参数应为 FILE * */
+    va_end(ap);
+}
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 的第二个参数类型必须是 const char *。
+ * 传入 int，gcc -std=c99 应报类型不兼容错误。
+ * 期望报错：incompatible type for argument 2 of 'vfscanf'
+ * ------------------------------------------------------------ */
+void bad_format_type(void)
+{
+    FILE *fp = tmpfile();
+    va_list ap;
+    va_start(ap, 0);
+    vfscanf(fp, 123, ap);          /* 错误：第二参数应为 const char * */
+    va_end(ap);
+    fclose(fp);
+}
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 返回值是 int，不能当作结构体使用。
+ * 期望报错：request for member 'x' in something not a structure
+ * ------------------------------------------------------------ */
+void bad_return_use(void)
+{
+    FILE *fp = tmpfile();
+    va_list ap;
+    va_start(ap, 0);
+    int v = vfscanf(fp, "%d", ap).x;   /* 错误：int 无成员 x */
+    va_end(ap);
+    (void)v;
+    fclose(fp);
+}
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 返回值不是左值，不能赋值。
+ * 期望报错：lvalue required as left operand of assignment
+ * ------------------------------------------------------------ */
+void bad_return_assign(void)
+{
+    FILE *fp = tmpfile();
+    va_list ap;
+    va_start(ap, 0);
+    vfscanf(fp, "%d", ap) = 0;     /* 错误：函数返回值非左值 */
+    va_end(ap);
+    fclose(fp);
+}
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 返回值不能取地址。
+ * 期望报错：lvalue required as unary '&' operand
+ * ------------------------------------------------------------ */
+void bad_return_addr(void)
+{
+    FILE *fp = tmpfile();
+    va_list ap;
+    va_start(ap, 0);
+    int *p = &vfscanf(fp, "%d", ap);   /* 错误：非左值不能取地址 */
+    va_end(ap);
+    (void)p;
+    fclose(fp);
+}
+
+/* ------------------------------------------------------------
+ * 违反约束 [1]：vfscanf 未声明就使用（若未包含 <stdio.h>）。
+ * 期望报错：implicit declaration of function 'vfscanf'
+ * 注意：本片段假设 <stdio.h> 未包含；实际测试时需单独编译。
+ * ------------------------------------------------------------ */
+void bad_no_decl(void)
+{
+    /* 假设此处没有 #include <stdio.h> */
+    /* vfscanf(stdin, "%d", 0); */  /* 错误：隐式声明 */
+}
+
+#endif /* 负向测试结束 */
+
+/* ============================================================
+ * main
+ * ============================================================ */
+int main(void)
+{
+    positive_tests();
+    printf("All C99 7.19.6.9 tests passed.\n");
+    return 0;
+}

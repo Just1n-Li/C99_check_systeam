@@ -1,0 +1,154 @@
+=== TEXT ===
+Extensible wide character classification functions
+[1] The functions wctype and iswctype provide extensible wide character classification as well as testing equivalent to that performed by the functions described in the previous subclause (7.25.2.1).
+
+=== CODE ===
+/*
+ * 测试 C99 7.25.2.2 —— 可扩展宽字符分类函数 wctype / iswctype
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 条款要点：
+ *   [1] wctype 与 iswctype 提供“可扩展的”宽字符分类，
+ *       并且能完成与 7.25.2.1 中那些函数（iswalpha/iswdigit/...）等价的测试。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <wctype.h>
+#include <assert.h>
+#include <locale.h>
+
+int main(void)
+{
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] wctype 返回 wctype_t，iswctype 接受 (wint_t, wctype_t) 并返回 int。
+     *     先验证函数存在且类型正确（能编译即证明原型符合 C99）。 */
+    {
+        wctype_t t;
+        wint_t   wc;
+        int      r;
+
+        t  = wctype("alpha");   /* [1] 取得“字母”分类描述符 */
+        wc = L'A';
+        r  = iswctype(wc, t);   /* [1] 用描述符做分类测试 */
+        assert(r != 0);         /* 'A' 是字母 */
+
+        t  = wctype("digit");
+        wc = L'7';
+        r  = iswctype(wc, t);
+        assert(r != 0);         /* '7' 是数字 */
+
+        wc = L'A';
+        r  = iswctype(wc, t);
+        assert(r == 0);         /* 'A' 不是数字 */
+    }
+
+    /* [1] 与 7.25.2.1 的等价性：对同一字符，iswctype(c, wctype("xxx"))
+     *     的结果应与对应的 iswxxx(c) 一致。逐一覆盖 7.25.2.1 的分类函数。 */
+    {
+        static const wchar_t *samples = L"aZ09 \t!?_";
+        const wchar_t *p;
+
+        for (p = samples; *p != L'\0'; ++p) {
+            wint_t c = (wint_t)*p;
+
+            /* 字母 */
+            assert((iswctype(c, wctype("alpha"))  != 0) == (iswalpha(c)  != 0));
+            /* 数字 */
+            assert((iswctype(c, wctype("digit"))  != 0) == (iswdigit(c)  != 0));
+            /* 字母或数字 */
+            assert((iswctype(c, wctype("alnum"))  != 0) == (iswalnum(c)  != 0));
+            /* 空白 */
+            assert((iswctype(c, wctype("space"))  != 0) == (iswspace(c)  != 0));
+            /* 标点 */
+            assert((iswctype(c, wctype("punct"))  != 0) == (iswpunct(c)  != 0));
+            /* 控制字符 */
+            assert((iswctype(c, wctype("cntrl"))  != 0) == (iswcntrl(c)  != 0));
+            /* 十六进制数字 */
+            assert((iswctype(c, wctype("xdigit")) != 0) == (iswxdigit(c) != 0));
+            /* 小写字母 */
+            assert((iswctype(c, wctype("lower"))  != 0) == (iswlower(c)  != 0));
+            /* 大写字母 */
+            assert((iswctype(c, wctype("upper"))  != 0) == (iswupper(c)  != 0));
+            /* 可打印字符 */
+            assert((iswctype(c, wctype("print"))  != 0) == (iswprint(c)  != 0));
+            /* 图形字符 */
+            assert((iswctype(c, wctype("graph"))  != 0) == (iswgraph(c)  != 0));
+            /* 空白（含换页等） */
+            assert((iswctype(c, wctype("blank"))  != 0) == (iswblank(c)  != 0));
+        }
+    }
+
+    /* [1] “可扩展”的含义：wctype 接受一个字符串名，返回可用于 iswctype 的描述符。
+     *     对同一名字重复调用应得到可用的描述符（不要求指针相等，只要求可用）。 */
+    {
+        wctype_t t1 = wctype("alpha");
+        wctype_t t2 = wctype("alpha");
+        assert(iswctype(L'x', t1) != 0);
+        assert(iswctype(L'x', t2) != 0);
+    }
+
+    /* [1] 未识别的分类名：wctype 返回 0，iswctype 对 0 描述符返回 0。 */
+    {
+        wctype_t t = wctype("no_such_class_xyz");
+        assert(t == (wctype_t)0);
+        assert(iswctype(L'A', t) == 0);
+    }
+
+    /* [1] iswctype 对 WEOF 的处理：不应崩溃，返回 0（WEOF 不属于任何分类）。 */
+    {
+        wctype_t t = wctype("alpha");
+        assert(iswctype(WEOF, t) == 0);
+    }
+
+    printf("C99 7.25.2.2 positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「iswctype 的第一个实参类型为 wint_t」：
+     * 传入结构体类型，gcc -std=c99 应报 incompatible type 错误。 */
+    {
+        struct S { int x; } s;
+        wctype_t t = wctype("alpha");
+        iswctype(s, t);            /* 错误：s 不是 wint_t */
+    }
+
+    /* 违反约束「iswctype 的第二个实参类型为 wctype_t」：
+     * 传入字符串指针，gcc -std=c99 应报 incompatible type 错误。 */
+    {
+        iswctype(L'A', "alpha");   /* 错误：第二个实参不是 wctype_t */
+    }
+
+    /* 违反约束「wctype 的实参类型为 const char *」：
+     * 传入宽字符指针，gcc -std=c99 应报 incompatible type 错误。 */
+    {
+        wctype(L"alpha");          /* 错误：实参不是 const char * */
+    }
+
+    /* 违反约束「wctype 只接受一个实参」：
+     * 多传实参，gcc -std=c99 应报 too many arguments 错误。 */
+    {
+        wctype("alpha", "digit");  /* 错误：实参个数过多 */
+    }
+
+    /* 违反约束「iswctype 需要两个实参」：
+     * 少传实参，gcc -std=c99 应报 too few arguments 错误。 */
+    {
+        iswctype(L'A');            /* 错误：实参个数过少 */
+    }
+
+    /* 违反约束「wctype 返回 wctype_t，不能对其结果取成员」：
+     * 对非结构体类型使用 . 运算符，gcc -std=c99 应报错。 */
+    {
+        wctype("alpha").x;         /* 错误：wctype_t 不是结构体 */
+    }
+
+#endif
+
+    return 0;
+}

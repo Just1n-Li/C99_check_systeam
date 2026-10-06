@@ -1,0 +1,253 @@
+=== ARTICLE ===
+6.7.2.1
+=== TEXT ===
+Structure and union specifiers
+Syntax:
+[1] struct-or-union-specifier: struct-or-union identifier { struct-declaration-list } struct-or-union identifier struct-or-union: struct union struct-declaration-list: struct-declaration struct-declaration-list struct-declaration struct-declaration: specifier-qualifier-list struct-declarator-list ; specifier-qualifier-list: type-specifier specifier-qualifier-list type-qualifier specifier-qualifier-list struct-declarator-list: struct-declarator struct-declarator-list , struct-declarator struct-declarator: declarator declarator : constant-expression
+Constraints:
+[2] A structure or union shall not contain a member with incomplete or function type (hence, a structure shall not contain an instance of itself, but may contain a pointer to an instance of itself), except that the last member of a structure with more than one named member may have incomplete array type; such a structure (and any union containing, possibly recursively, a member that is such a structure) shall not be a member of a structure or an element of an array.
+[3] The expression that specifies the width of a bit-field shall be an integer constant expression with a nonnegative value that does not exceed the width of an object of the type that would be specified were the colon and expression omitted. If the value is zero, the declaration shall have no declarator.
+[4] A bit-field shall have a type that is a qualified or unqualified version of _Bool, signed int, unsigned int, or some other implementation-defined type.
+Semantics:
+[5] As discussed in 6.2.5, a structure is a type consisting of a sequence of members, whose storage is allocated in an ordered sequence, and a union is a type consisting of a sequence of members whose storage overlap.
+[6] Structure and union specifiers have the same form. The keywords struct and union indicate that the type being specified is, respectively, a structure type or a union type.
+[7] The presence of a struct-declaration-list in a struct-or-union-specifier declares a new type, within a translation unit. The struct-declaration-list is a sequence of declarations for the members of the structure or union. If the struct-declaration-list contains no named members, the behavior is undefined. The type is incomplete until after the } that terminates the list.
+[8] A member of a structure or union may have any object type other than a variably modified type. In addition, a member may be declared to consist of a specified number of bits (including a sign bit, if any). Such a member is called a bit-field; its width is preceded by a colon.
+[9] A bit-field is interpreted as a signed or unsigned integer type consisting of the specified number of bits. If the value 0 or 1 is stored into a nonzero-width bit-field of type _Bool, the value of the bit-field shall compare equal to the value stored.
+[10] An implementation may allocate any addressable storage unit large enough to hold a bit- field. If enough space remains, a bit-field that immediately follows another bit-field in a structure shall be packed into adjacent bits of the same unit. If insufficient space remains, whether a bit-field that does not fit is put into the next unit or overlaps adjacent units is implementation-defined. The order of allocation of bit-fields within a unit (high-order to low-order or low-order to high-order) is implementation-defined. The alignment of the addressable storage unit is unspecified.
+[11] A bit-field declaration with no declarator, but only a colon and a width, indicates an unnamed bit-field. As a special case, a bit-field structure member with a width of 0 indicates that no further bit-field is to be packed into the unit in which the previous bit- field, if any, was placed.
+[12] Each non-bit-field member of a structure or union object is aligned in an implementation- defined manner appropriate to its type.
+[13] Within a structure object, the non-bit-field members and the units in which bit-fields reside have addresses that increase in the order in which they are declared. A pointer to a structure object, suitably converted, points to its initial member (or if that member is a bit-field, then to the unit in which it resides), and vice versa. There may be unnamed padding within a structure object, but not at its beginning.
+[14] The size of a union is sufficient to contain the largest of its members. The value of at most one of the members can be stored in a union object at any time. A pointer to a union object, suitably converted, points to each of its members (or if a member is a bit- field, then to the unit in which it resides), and vice versa.
+[15] There may be unnamed padding at the end of a structure or union.
+[16] As a special case, the last element of a structure with more than one named member may have an incomplete array type; this is called a flexible array member. In most situations, the flexible array member is ignored. In particular, the size of the structure is as if the flexible array member were omitted except that it may have more trailing padding than the omission would imply. However, when a . (or ->) operator has a left operand that is (a pointer to) a structure with a flexible array member and the right operand names that member, it behaves as if that member were replaced with the longest array (with the same element type) that would not make the structure larger than the object being accessed; the offset of the array shall remain that of the flexible array member, even if this would differ from that of the replacement array. If this array would have no elements, it behaves as if it had one element but the behavior is undefined if any attempt is made to access that element or to generate a pointer one past it.
+[17] EXAMPLE After the declaration: struct s { int n; double d[]; }; the structure struct s has a flexible array member d. A typical way to use this is: int m = /* some value */; struct s *p = malloc(sizeof (struct s) + sizeof (double [m])); and assuming that the call to malloc succeeds, the object pointed to by p behaves, for most purposes, as if p had been declared as: struct { int n; double d[m]; } *p; (there are circumstances in which this equivalence is broken; in particular, the offsets of member d might not be the same).
+[18] Following the above declaration: struct s t1 = { 0 }; // valid struct s t2 = { 1, { 4.2 }}; // invalid t1.n = 4; // valid t1.d[0] = 4.2; // might be undefined behavior The initialization of t2 is invalid (and violates a constraint) because struct s is treated as if it did not contain member d. The assignment to t1.d[0] is probably undefined behavior, but it is possible that sizeof (struct s) >= offsetof(struct s, d) + sizeof (double) in which case the assignment would be legitimate. Nevertheless, it cannot appear in strictly conforming code.
+[19] After the further declaration: struct ss { int n; }; the expressions: sizeof (struct s) >= sizeof (struct ss) sizeof (struct s) >= offsetof(struct s, d) are always equal to 1.
+[20] If sizeof (double) is 8, then after the following code is executed: struct s *s1; struct s *s2; s1 = malloc(sizeof (struct s) + 64); s2 = malloc(sizeof (struct s) + 46); and assuming that the calls to malloc succeed, the objects pointed to by s1 and s2 behave, for most purposes, as if the identifiers had been declared as: struct { int n; double d[8]; } *s1; struct { int n; double d[5]; } *s2;
+[21] Following the further successful assignments: s1 = malloc(sizeof (struct s) + 10); s2 = malloc(sizeof (struct s) + 6); they then behave as if the declarations were: struct { int n; double d[1]; } *s1, *s2; and: double *dp; dp = &(s1->d[0]); // valid *dp = 42; // valid dp = &(s2->d[0]); // valid *dp = 42; // undefined behavior
+[22] The assignment: *s1 = *s2; only copies the member n; if any of the array elements are within the first sizeof (struct s) bytes of the structure, they might be copied or simply overwritten with indeterminate values.
+Forward references: tags (6.7.2.3).
+Footnotes:
+105) A structure or union can not contain a member with a variably modified type because member names are not ordinary identifiers as defined in 6.2.3.
+106) The unary & (address-of) operator cannot be applied to a bit-field object; thus, there are no pointers to or arrays of bit-field objects.
+107) As specified in 6.7.2 above, if the actual type specifier used is int or a typedef-name defined as int, then it is implementation-defined whether the bit-field is signed or unsigned.
+108) An unnamed bit-field structure member is useful for padding to conform to externally imposed layouts.
+=== CODE ===
+/*
+ * 验证 C99 6.7.2.1 条款：Structure and union specifiers
+ * 预期行为：
+ * - 正向测试：能编译并运行通过，断言成功。
+ * - 负向测试：违反约束，编译器应报错。
+ */
+
+#include <stdio.h>
+#include <stddef.h>
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [5] 结构体顺序存储，联合体重叠存储 */
+void test_semantics_5(void) {
+    struct S { int a; char b; double c; };
+    struct S s;
+    assert((char*)&s.a < (char*)&s.b);
+    assert((char*)&s.b < (char*)&s.c);
+
+    union U { int a; double b; char c[8]; };
+    union U u;
+    assert((void*)&u.a == (void*)&u.b);
+    assert((void*)&u.b == (void*)&u.c);
+}
+
+/* [6] struct 和 union 关键字 */
+void test_semantics_6(void) {
+    struct S1 { int x; };
+    union U1 { int x; };
+    struct S1 s;
+    union U1 u;
+    s.x = 1;
+    u.x = 1;
+    assert(s.x == 1);
+    assert(u.x == 1);
+}
+
+/* [7] 类型直到 } 才完整 */
+void test_semantics_7(void) {
+    struct S { int a; } s;
+    /* sizeof 可以在 } 之后使用 */
+    assert(sizeof(s) == sizeof(int));
+}
+
+/* [8] 成员可以是任何对象类型（除了可变修改类型） */
+void test_semantics_8(void) {
+    struct Inner { int x; };
+    struct S {
+        int arr[5];
+        struct Inner inner;
+        int *ptr;
+    };
+    struct S s;
+    s.arr[0] = 1;
+    s.inner.x = 2;
+    int v = 3;
+    s.ptr = &v;
+    assert(s.arr[0] == 1);
+    assert(s.inner.x == 2);
+    assert(*s.ptr == 3);
+}
+
+/* [9] _Bool 位域存0或1比较相等 */
+void test_semantics_9(void) {
+    struct S { _Bool b : 1; };
+    struct S s;
+    s.b = 0;
+    assert(s.b == 0);
+    s.b = 1;
+    assert(s.b == 1);
+}
+
+/* [11] 无名位域和宽度为0的位域 */
+void test_semantics_11(void) {
+    struct S {
+        int a : 4;
+        int : 4; /* 无名位域 */
+        int b : 4;
+        int : 0; /* 宽度为0，强制下一个位域到下一个存储单元 */
+        int c : 4;
+    };
+    struct S s;
+    s.a = 1;
+    s.b = 2;
+    s.c = 3;
+    assert(s.a == 1);
+    assert(s.b == 2);
+    assert(s.c == 3);
+}
+
+/* [13] 地址递增，指针指向首成员 */
+void test_semantics_13(void) {
+    struct S { int a; int b; };
+    struct S s;
+    assert((char*)&s.a < (char*)&s.b);
+    /* 指向结构体的指针转换后指向首成员 */
+    assert((void*)&s == (void*)&s.a);
+}
+
+/* [14] 联合体大小，指针指向成员 */
+void test_semantics_14(void) {
+    union U { int a; double b; };
+    union U u;
+    assert(sizeof(u) >= sizeof(double));
+    assert(sizeof(u) >= sizeof(int));
+    assert((void*)&u == (void*)&u.a);
+    assert((void*)&u == (void*)&u.b);
+}
+
+/* [16] 灵活数组成员 */
+void test_semantics_16(void) {
+    struct s {
+        int n;
+        double d[]; /* 灵活数组成员 */
+    };
+    struct s_no_fam {
+        int n;
+    };
+    /* sizeof 忽略 FAM，但可能有尾部填充 */
+    assert(sizeof(struct s) >= sizeof(struct s_no_fam));
+
+    int m = 5;
+    struct s *p = malloc(sizeof(struct s) + m * sizeof(double));
+    assert(p != NULL);
+    p->n = m;
+    for (int i = 0; i < m; i++) {
+        p->d[i] = i * 2.0;
+    }
+    assert(p->d[4] == 8.0);
+    free(p);
+}
+
+/* [17] 示例 */
+void test_example_17(void) {
+    struct s { int n; double d[]; };
+    int m = 3;
+    struct s *p = malloc(sizeof (struct s) + sizeof (double) * m);
+    p->n = m;
+    for (int i = 0; i < m; i++) p->d[i] = i;
+    assert(p->n == 3);
+    assert(p->d[2] == 2.0);
+    free(p);
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* [2] 违反约束：结构体包含不完整类型成员（非最后成员） */
+struct IncompleteType;
+struct BadIncomplete {
+    struct IncompleteType val;  /* 应报错 */
+};
+
+/* [2] 违反约束：结构体包含函数类型成员 */
+struct BadFunc {
+    int func(void); /* 应报错 */
+};
+
+/* [2] 违反约束：结构体包含自身实例 */
+struct SelfInstance {
+    struct SelfInstance self; /* 应报错 */
+};
+
+/* [2] 违反约束：包含灵活数组的结构体作为其他结构体成员 */
+struct WithFAM {
+    int n;
+    int data[];
+};
+struct BadFAMMember {
+    int x;
+    struct WithFAM fam; /* 应报错 */
+};
+
+/* [2] 违反约束：包含灵活数组的结构体作为数组元素 */
+struct BadFAMArray {
+    struct WithFAM arr[3]; /* 应报错 */
+};
+
+/* [3] 违反约束：位域宽度为负 */
+struct NegBitfield {
+    int x : -1; /* 应报错 */
+};
+
+/* [3] 违反约束：位域宽度超过类型宽度 */
+struct HugeBitfield {
+    int x : 100; /* 应报错 */
+};
+
+/* [3] 违反约束：位域宽度为0但有声明符 */
+struct ZeroBitfieldDeclarator {
+    int x : 0; /* 应报错 */
+};
+
+/* [4] 违反约束：位域类型为非允许类型（如 float） */
+struct FloatBitfield {
+    float x : 1; /* 应报错 */
+};
+
+#endif
+
+int main(void) {
+    test_semantics_5();
+    test_semantics_6();
+    test_semantics_7();
+    test_semantics_8();
+    test_semantics_9();
+    test_semantics_11();
+    test_semantics_13();
+    test_semantics_14();
+    test_semantics_16();
+    test_example_17();
+    printf("All positive tests passed.\n");
+    return 0;
+}

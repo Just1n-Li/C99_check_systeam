@@ -1,0 +1,168 @@
+=== ARTICLE 7.21.4.4 ===
+--- TEXT ---
+The strncmp function
+Synopsis:
+[1] #include <string.h> int strncmp(const char *s1, const char *s2, size_t n);
+Description:
+[2] The strncmp function compares not more than n characters (characters that follow a null character are not compared) from the array pointed to by s1 to the array pointed to by s2.
+Returns:
+[3] The strncmp function returns an integer greater than, equal to, or less than zero, accordingly as the possibly null-terminated array pointed to by s1 is greater than, equal to, or less than the possibly null-terminated array pointed to by s2.
+--- CODE ---
+/*
+ * 测试 C99 7.21.4.4 —— strncmp 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明：int strncmp(const char *s1, const char *s2, size_t n);
+ *   [2] 语义：最多比较 n 个字符；遇到空字符后的字符不再比较。
+ *   [3] 返回值：按 s1 与 s2 的比较结果返回 >0 / ==0 / <0。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型可用性：包含 <string.h> 后 strncmp 可被调用，参数类型为
+ *     const char *、const char *、size_t，返回 int。 */
+static void test_prototype(void)
+{
+    const char *a = "abc";
+    const char *b = "abc";
+    size_t n = 3;
+    int r = strncmp(a, b, n);   /* 参数类型匹配 */
+    assert(r == 0);
+}
+
+/* [3] 返回值符号：相等返回 0 */
+static void test_equal(void)
+{
+    assert(strncmp("hello", "hello", 5) == 0);
+    assert(strncmp("", "", 0) == 0);
+    assert(strncmp("abc", "abc", 100) == 0); /* n 超过长度，仍相等 */
+}
+
+/* [3] 返回值符号：s1 > s2 返回 > 0 */
+static void test_greater(void)
+{
+    assert(strncmp("b", "a", 1) > 0);
+    assert(strncmp("abd", "abc", 3) > 0);
+    assert(strncmp("abc", "ab", 3) > 0);   /* 'c' vs '\0' */
+}
+
+/* [3] 返回值符号：s1 < s2 返回 < 0 */
+static void test_less(void)
+{
+    assert(strncmp("a", "b", 1) < 0);
+    assert(strncmp("abc", "abd", 3) < 0);
+    assert(strncmp("ab", "abc", 3) < 0);   /* '\0' vs 'c' */
+}
+
+/* [2] 最多比较 n 个字符：n 限制比较长度 */
+static void test_n_limit(void)
+{
+    /* 前 3 个字符相同，n=3 时相等 */
+    assert(strncmp("abcdef", "abcxyz", 3) == 0);
+    /* n=4 时第 4 个字符不同 */
+    assert(strncmp("abcdef", "abcxyz", 4) < 0);
+    /* n=0 时不比较任何字符，恒相等 */
+    assert(strncmp("abc", "xyz", 0) == 0);
+    assert(strncmp("", "abc", 0) == 0);
+}
+
+/* [2] 空字符后的字符不再比较：即使 n 很大，遇到 '\0' 即停止 */
+static void test_null_terminator(void)
+{
+    /* "ab\0XX" 与 "ab\0YY"：比较到 '\0' 即相等，后面的 XX/YY 不参与 */
+    const char s1[] = { 'a', 'b', '\0', 'X', 'X', '\0' };
+    const char s2[] = { 'a', 'b', '\0', 'Y', 'Y', '\0' };
+    assert(strncmp(s1, s2, 6) == 0);
+
+    /* 一个字符串提前结束：'\0' 小于任何非零字符 */
+    const char s3[] = { 'a', 'b', '\0', 'Z', '\0' };
+    const char s4[] = { 'a', 'b', 'c', '\0' };
+    assert(strncmp(s3, s4, 5) < 0);
+    assert(strncmp(s4, s3, 5) > 0);
+}
+
+/* [2] 比较的是 unsigned char 语义（字符值比较），验证高位字符 */
+static void test_unsigned_char_semantics(void)
+{
+    /* 0x80 作为 unsigned char 大于 'a'(0x61) */
+    const char s1[] = { (char)0x80, '\0' };
+    const char s2[] = { 'a', '\0' };
+    assert(strncmp(s1, s2, 1) > 0);
+    assert(strncmp(s2, s1, 1) < 0);
+}
+
+/* [2][3] 综合：n 截断 + 返回值符号 */
+static void test_combined(void)
+{
+    assert(strncmp("prefix_aaa", "prefix_bbb", 7) == 0); /* 只比 "prefix_" */
+    assert(strncmp("prefix_aaa", "prefix_bbb", 8) < 0);  /* 第 8 个字符 'a'<'b' */
+    assert(strncmp("prefix_bbb", "prefix_aaa", 8) > 0);
+}
+
+int main(void)
+{
+    test_prototype();
+    test_equal();
+    test_greater();
+    test_less();
+    test_n_limit();
+    test_null_terminator();
+    test_unsigned_char_semantics();
+    test_combined();
+
+    printf("C99 7.21.4.4 strncmp: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「strncmp 的第一个参数类型为 const char *」：
+ * 传入 int* 无法隐式转换为 const char*（不兼容指针类型），
+ * gcc -std=c99 应报错：passing argument 1 of 'strncmp' from incompatible pointer type。 */
+{
+    int arr[4] = { 1, 2, 3, 4 };
+    strncmp(arr, "abc", 3);
+}
+
+/* 违反约束「strncmp 的第二个参数类型为 const char *」：
+ * 传入 double* 不兼容，应编译报错。 */
+{
+    double d[2] = { 1.0, 2.0 };
+    strncmp("abc", d, 3);
+}
+
+/* 违反约束「strncmp 的第三个参数类型为 size_t」：
+ * 传入结构体类型无法转换为 size_t，应编译报错。 */
+{
+    struct S { int x; } s;
+    strncmp("abc", "abd", s);
+}
+
+/* 违反约束「strncmp 返回 int，不能作为函数被赋值调用」：
+ * 对函数名赋值，应编译报错（lvalue required as left operand of assignment）。 */
+{
+    strncmp = 0;
+}
+
+/* 违反约束「strncmp 需要 3 个实参」：
+ * 实参个数不匹配，应编译报错（too few arguments to function 'strncmp'）。 */
+{
+    strncmp("abc", "abd");
+}
+
+/* 违反约束「strncmp 需要 3 个实参」：
+ * 实参过多，应编译报错（too many arguments to function 'strncmp'）。 */
+{
+    strncmp("abc", "abd", 3, 4);
+}
+
+#endif /* 负向测试结束 */

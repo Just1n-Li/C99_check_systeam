@@ -1,0 +1,375 @@
+=== ARTICLE 7.23.2.3 ===
+--- TEXT ---
+The mktime function
+Synopsis:
+[1] #include <time.h> time_t mktime(struct tm *timeptr);
+Description:
+[2] The mktime function converts the broken-down time, expressed as local time, in the structure pointed to by timeptr into a calendar time value with the same encoding as that of the values returned by the time function. The original values of the tm_wday and tm_yday components of the structure are ignored, and the original values of the other components are not restricted to the ranges indicated above. On successful completion, the values of the tm_wday and tm_yday components of the structure are set appropriately, and the other components are set to represent the specified calendar time, but with their values forced to the ranges indicated above; the final value of tm_mday is not set until tm_mon and tm_year are determined.
+Returns:
+[3] The mktime function returns the specified calendar time encoded as a value of type time_t. If the calendar time cannot be represented, the function returns the value (time_t)(-1).
+[4] EXAMPLE What day of the week is July 4, 2001? #include <stdio.h> #include <time.h> static const char *const wday[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "-unknown-" }; struct tm time_str; /* ... */ time_str.tm_year = 2001 - 1900; time_str.tm_mon = 7 - 1; time_str.tm_mday = 4; time_str.tm_hour = 0; time_str.tm_min = 0; time_str.tm_sec = 1; time_str.tm_isdst = -1; if (mktime(&time_str) == (time_t)(-1)) time_str.tm_wday = 7; printf("%s\n", wday[time_str.tm_wday]);
+Footnotes:
+276) Thus, a positive or zero value for tm_isdst causes the mktime function to presume initially that Daylight Saving Time, respectively, is or is not in effect for the specified time. A negative value causes it to attempt to determine whether Daylight Saving Time is in effect for the specified time.
+--- CODE ---
+/*
+ * 测试条款：C99 7.23.2.3  The mktime function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：以下代码违反 C99 约束，应编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：time_t mktime(struct tm *timeptr);
+ *   [2] 语义：把本地时间的分解时间转换为日历时间；忽略 tm_wday/tm_yday 原值；
+ *       其它分量原值不受范围限制；成功后 tm_wday/tm_yday 被正确设置，
+ *       其它分量被强制到规定范围；tm_mday 的最终值在 tm_mon/tm_year 确定后才设置。
+ *   [3] 返回值：返回 time_t 编码的日历时间；无法表示时返回 (time_t)(-1)。
+ *   [4] EXAMPLE：2001 年 7 月 4 日是星期几。
+ *   脚注 276：tm_isdst 正/零值假定夏令时生效/不生效；负值尝试自动判定。
+ */
+
+#include <stdio.h>
+#include <time.h>
+#include <assert.h>
+#include <string.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：mktime 接受 struct tm *，返回 time_t。
+ *     通过取函数指针类型来静态验证原型。 */
+static time_t (*mktime_proto_check)(struct tm *) = mktime;
+
+/* [4] EXAMPLE：2001 年 7 月 4 日是星期几？ */
+static void test_example_2001_07_04(void)
+{
+    static const char *const wday[] = {
+        "Sunday", "Monday", "Tuesday", "Wednesday",
+        "Thursday", "Friday", "Saturday", "-unknown-"
+    };
+    struct tm time_str;
+    time_t t;
+
+    memset(&time_str, 0, sizeof time_str);
+    time_str.tm_year = 2001 - 1900;
+    time_str.tm_mon  = 7 - 1;
+    time_str.tm_mday = 4;
+    time_str.tm_hour = 0;
+    time_str.tm_min  = 0;
+    time_str.tm_sec  = 1;
+    time_str.tm_isdst = -1;
+
+    t = mktime(&time_str);
+    if (t == (time_t)(-1)) {
+        time_str.tm_wday = 7;
+    }
+    /* 2001-07-04 是星期三 */
+    assert(time_str.tm_wday == 3);
+    assert(strcmp(wday[time_str.tm_wday], "Wednesday") == 0);
+    printf("[4] 2001-07-04 is %s\n", wday[time_str.tm_wday]);
+}
+
+/* [2] 忽略 tm_wday / tm_yday 的原值：填入垃圾值，结果应不受影响。 */
+static void test_ignore_wday_yday(void)
+{
+    struct tm a, b;
+    time_t ta, tb;
+
+    memset(&a, 0, sizeof a);
+    a.tm_year = 2001 - 1900;
+    a.tm_mon  = 7 - 1;
+    a.tm_mday = 4;
+    a.tm_hour = 0;
+    a.tm_min  = 0;
+    a.tm_sec  = 1;
+    a.tm_isdst = -1;
+    a.tm_wday = 6;      /* 垃圾值，应被忽略 */
+    a.tm_yday = 300;    /* 垃圾值，应被忽略 */
+
+    memset(&b, 0, sizeof b);
+    b.tm_year = 2001 - 1900;
+    b.tm_mon  = 7 - 1;
+    b.tm_mday = 4;
+    b.tm_hour = 0;
+    b.tm_min  = 0;
+    b.tm_sec  = 1;
+    b.tm_isdst = -1;
+    b.tm_wday = 0;
+    b.tm_yday = 0;
+
+    ta = mktime(&a);
+    tb = mktime(&b);
+    assert(ta != (time_t)(-1));
+    assert(tb != (time_t)(-1));
+    assert(ta == tb);
+    assert(a.tm_wday == b.tm_wday);
+    assert(a.tm_yday == b.tm_yday);
+    printf("[2] ignore tm_wday/tm_yday: ta==tb, wday=%d yday=%d\n",
+           a.tm_wday, a.tm_yday);
+}
+
+/* [2] 其它分量原值不受范围限制：例如 tm_mon = 12 表示次年 1 月，
+ *     tm_mday = 0 表示上月最后一天，tm_hour = 25 表示次日 1 点。
+ *     成功后这些分量被强制到规定范围。 */
+static void test_out_of_range_normalization(void)
+{
+    struct tm t;
+    time_t r;
+
+    /* tm_mon = 12 -> 次年 1 月；tm_mday = 1 */
+    memset(&t, 0, sizeof t);
+    t.tm_year = 2000 - 1900;
+    t.tm_mon  = 12;     /* 超出 [0,11] */
+    t.tm_mday = 1;
+    t.tm_hour = 0;
+    t.tm_min  = 0;
+    t.tm_sec  = 0;
+    t.tm_isdst = -1;
+    r = mktime(&t);
+    assert(r != (time_t)(-1));
+    assert(t.tm_year == 2001 - 1900);
+    assert(t.tm_mon  == 0);
+    assert(t.tm_mday == 1);
+    printf("[2] tm_mon=12 normalized to year=%d mon=%d mday=%d\n",
+           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday);
+
+    /* tm_mday = 0 -> 上月最后一天 */
+    memset(&t, 0, sizeof t);
+    t.tm_year = 2001 - 1900;
+    t.tm_mon  = 3 - 1;  /* 3 月 */
+    t.tm_mday = 0;      /* 上月最后一天 = 2 月 28 日 */
+    t.tm_hour = 0;
+    t.tm_min  = 0;
+    t.tm_sec  = 0;
+    t.tm_isdst = -1;
+    r = mktime(&t);
+    assert(r != (time_t)(-1));
+    assert(t.tm_mon  == 2 - 1);
+    assert(t.tm_mday == 28);
+    printf("[2] tm_mday=0 normalized to mon=%d mday=%d\n",
+           t.tm_mon + 1, t.tm_mday);
+
+    /* tm_hour = 25 -> 次日 1 点 */
+    memset(&t, 0, sizeof t);
+    t.tm_year = 2001 - 1900;
+    t.tm_mon  = 7 - 1;
+    t.tm_mday = 4;
+    t.tm_hour = 25;     /* 超出 [0,23] */
+    t.tm_min  = 0;
+    t.tm_sec  = 0;
+    t.tm_isdst = -1;
+    r = mktime(&t);
+    assert(r != (time_t)(-1));
+    assert(t.tm_mday == 5);
+    assert(t.tm_hour == 1);
+    printf("[2] tm_hour=25 normalized to mday=%d hour=%d\n",
+           t.tm_mday, t.tm_hour);
+}
+
+/* [2] 成功后 tm_wday / tm_yday 被正确设置。
+ *     2001-01-01 是星期一 (tm_wday==1)，tm_yday==0。 */
+static void test_wday_yday_set(void)
+{
+    struct tm t;
+    time_t r;
+
+    memset(&t, 0, sizeof t);
+    t.tm_year = 2001 - 1900;
+    t.tm_mon  = 0;
+    t.tm_mday = 1;
+    t.tm_hour = 0;
+    t.tm_min  = 0;
+    t.tm_sec  = 0;
+    t.tm_isdst = -1;
+    r = mktime(&t);
+    assert(r != (time_t)(-1));
+    assert(t.tm_wday == 1);   /* Monday */
+    assert(t.tm_yday == 0);
+    printf("[2] 2001-01-01 wday=%d yday=%d\n", t.tm_wday, t.tm_yday);
+}
+
+/* [2] tm_mday 的最终值在 tm_mon/tm_year 确定后才设置：
+ *     用 tm_mday 越界（如 32）触发跨月，验证最终 tm_mday 落在 [1,31]。 */
+static void test_mday_finalized_after_mon_year(void)
+{
+    struct tm t;
+    time_t r;
+
+    memset(&t, 0, sizeof t);
+    t.tm_year = 2001 - 1900;
+    t.tm_mon  = 1 - 1;  /* 1 月 */
+    t.tm_mday = 32;     /* 1 月 32 日 -> 2 月 1 日 */
+    t.tm_hour = 0;
+    t.tm_min  = 0;
+    t.tm_sec  = 0;
+    t.tm_isdst = -1;
+    r = mktime(&t);
+    assert(r != (time_t)(-1));
+    assert(t.tm_mon  == 2 - 1);
+    assert(t.tm_mday == 1);
+    assert(t.tm_mday >= 1 && t.tm_mday <= 31);
+    printf("[2] tm_mday=32 finalized to mon=%d mday=%d\n",
+           t.tm_mon + 1, t.tm_mday);
+}
+
+/* [3] 返回值：mktime 返回 time_t 编码的日历时间。
+ *     对同一分解时间两次调用应得到相同结果（幂等）。 */
+static void test_return_value_encoding(void)
+{
+    struct tm t1, t2;
+    time_t r1, r2;
+
+    memset(&t1, 0, sizeof t1);
+    t1.tm_year = 2001 - 1900;
+    t1.tm_mon  = 7 - 1;
+    t1.tm_mday = 4;
+    t1.tm_hour = 0;
+    t1.tm_min  = 0;
+    t1.tm_sec  = 1;
+    t1.tm_isdst = -1;
+
+    t2 = t1;
+    r1 = mktime(&t1);
+    r2 = mktime(&t2);
+    assert(r1 != (time_t)(-1));
+    assert(r1 == r2);
+    printf("[3] mktime returns time_t: %ld (idempotent)\n", (long)r1);
+}
+
+/* [3] 无法表示时返回 (time_t)(-1)。
+ *     用一个极大年份（如 9999 年之后再加很多年）触发不可表示。 */
+static void test_unrepresentable_returns_minus_one(void)
+{
+    struct tm t;
+    time_t r;
+
+    memset(&t, 0, sizeof t);
+    t.tm_year = 100000;   /* 远超出 time_t 可表示范围 */
+    t.tm_mon  = 0;
+    t.tm_mday = 1;
+    t.tm_hour = 0;
+    t.tm_min  = 0;
+    t.tm_sec  = 0;
+    t.tm_isdst = -1;
+    r = mktime(&t);
+    /* 若平台 time_t 能表示该时间则跳过；否则必须返回 (time_t)(-1)。 */
+    if (r == (time_t)(-1)) {
+        printf("[3] unrepresentable time -> (time_t)(-1)\n");
+    } else {
+        printf("[3] platform can represent year 100000, skip -1 check\n");
+    }
+}
+
+/* 脚注 276：tm_isdst 正/零值假定夏令时生效/不生效；
+ * 负值尝试自动判定。这里验证三种取值都能成功返回，
+ * 且负值（自动判定）与显式取值之一一致。 */
+static void test_isdst_footnote_276(void)
+{
+    struct tm t_auto, t_dst, t_nodst;
+    time_t r_auto, r_dst, r_nodst;
+
+    memset(&t_auto, 0, sizeof t_auto);
+    t_auto.tm_year = 2001 - 1900;
+    t_auto.tm_mon  = 7 - 1;
+    t_auto.tm_mday = 4;
+    t_auto.tm_hour = 12;
+    t_auto.tm_min  = 0;
+    t_auto.tm_sec  = 0;
+    t_auto.tm_isdst = -1;   /* 自动判定 */
+
+    t_dst = t_auto; t_dst.tm_isdst = 1;   /* 假定夏令时生效 */
+    t_nodst = t_auto; t_nodst.tm_isdst = 0; /* 假定夏令时不生效 */
+
+    r_auto  = mktime(&t_auto);
+    r_dst   = mktime(&t_dst);
+    r_nodst = mktime(&t_nodst);
+
+    assert(r_auto  != (time_t)(-1));
+    assert(r_dst   != (time_t)(-1));
+    assert(r_nodst != (time_t)(-1));
+
+    /* 自动判定结果应与显式取值之一一致（取决于本地时区是否使用 DST）。 */
+    assert(r_auto == r_dst || r_auto == r_nodst);
+    printf("[276] isdst: auto=%ld dst=%ld nodst=%ld\n",
+           (long)r_auto, (long)r_dst, (long)r_nodst);
+}
+
+int main(void)
+{
+    /* 使用函数指针，避免未使用警告，同时验证 [1] 原型。 */
+    (void)mktime_proto_check;
+
+    test_example_2001_07_04();          /* [4] */
+    test_ignore_wday_yday();            /* [2] */
+    test_out_of_range_normalization();  /* [2] */
+    test_wday_yday_set();               /* [2] */
+    test_mday_finalized_after_mon_year();/* [2] */
+    test_return_value_encoding();       /* [3] */
+    test_unrepresentable_returns_minus_one(); /* [3] */
+    test_isdst_footnote_276();          /* 脚注 276 */
+
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「mktime 的参数类型必须是 struct tm *」：
+ * 传入 int* 而非 struct tm*，gcc -std=c99 应报 incompatible pointer type。 */
+void neg_wrong_arg_type(void)
+{
+    int x = 0;
+    mktime(&x);   /* 期望报错：incompatible pointer type */
+}
+
+/* 违反约束「mktime 的参数类型必须是 struct tm *」：
+ * 传入 const struct tm* 会丢弃 const 限定，应报错。 */
+void neg_const_arg(void)
+{
+    const struct tm ct = {0};
+    mktime(&ct);  /* 期望报错：discards 'const' qualifier */
+}
+
+/* 违反约束「mktime 的参数类型必须是 struct tm *」：
+ * 传入不完整类型指针，应报错。 */
+struct incomplete;
+void neg_incomplete_arg(void)
+{
+    struct incomplete *p = 0;
+    mktime(p);    /* 期望报错：incompatible pointer type */
+}
+
+/* 违反约束「mktime 的参数个数必须为 1」：
+ * 少传参数，应报错。 */
+void neg_too_few_args(void)
+{
+    mktime();     /* 期望报错：too few arguments to function 'mktime' */
+}
+
+/* 违反约束「mktime 的参数个数必须为 1」：
+ * 多传参数，应报错。 */
+void neg_too_many_args(void)
+{
+    struct tm t = {0};
+    mktime(&t, &t); /* 期望报错：too many arguments to function 'mktime' */
+}
+
+/* 违反约束「mktime 的返回类型为 time_t，不能作为左值赋值」：
+ * 对函数调用结果赋值，应报错。 */
+void neg_assign_to_call(void)
+{
+    struct tm t = {0};
+    mktime(&t) = 0; /* 期望报错：lvalue required as left operand of assignment */
+}
+
+/* 违反约束「mktime 的返回类型为 time_t，不能取地址」：
+ * 对函数调用结果取地址，应报错。 */
+void neg_addr_of_call(void)
+{
+    struct tm t = {0};
+    time_t *p = &mktime(&t); /* 期望报错：lvalue required as unary '&' operand */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,103 @@
+ARTICLE: 6.2.6.1
+
+TEXT:
+General
+[1] The representations of all types are unspecified except as stated in this subclause.
+[2] Except for bit-fields, objects are composed of contiguous sequences of one or more bytes, the number, order, and encoding of which are either explicitly specified or implementation-defined.
+[3] Values stored in unsigned bit-fields and objects of type unsigned char shall be represented using a pure binary notation.
+[4] Values stored in non-bit-field objects of any other object type consist of n x CHAR_BIT bits, where n is the size of an object of that type, in bytes. The value may be copied into an object of type unsigned char [n] (e.g., by memcpy); the resulting set of bytes is called the object representation of the value. Values stored in bit-fields consist of m bits, where m is the size specified for the bit-field. The object representation is the set of m bits the bit-field comprises in the addressable storage unit holding it. Two values (other than NaNs) with the same object representation compare equal, but values that compare equal may have different object representations.
+[5] Certain object representations need not represent a value of the object type. If the stored value of an object has such a representation and is read by an lvalue expression that does not have character type, the behavior is undefined. If such a representation is produced by a side effect that modifies all or any part of the object by an lvalue expression that does not have character type, the behavior is undefined. Such a representation is called a trap representation.
+[6] When a value is stored in an object of structure or union type, including in a member object, the bytes of the object representation that correspond to any padding bytes take unspecified values. The value of a structure or union object is never a trap representation, even though the value of a member of the structure or union object may be a trap representation.
+[7] When a value is stored in a member of an object of union type, the bytes of the object representation that do not correspond to that member but do correspond to other members take unspecified values.
+[8] Where an operator is applied to a value that has more than one object representation, which object representation is used shall not affect the value of the result. Where a value is stored in an object using a type that has more than one object representation for that value, it is unspecified which representation is used, but a trap representation shall not be generated.
+Forward references: declarations (6.7), expressions (6.5), lvalues, arrays, and function designators (6.3.2.1).
+Footnotes:
+40) A positional representation for integers that uses the binary digits 0 and 1, in which the values represented by successive bits are additive, begin with 1, and are multiplied by successive integral powers of 2, except perhaps the bit with the highest position. (Adapted from the American National Dictionary for Information Processing Systems.) A byte contains CHAR_BIT bits, and the values of type unsigned char range from 0 to 2- 1.
+41) Thus, an automatic variable can be initialized to a trap representation without causing undefined behavior, but the value of the variable cannot be used until a proper value is stored in it.
+42) Thus, for example, structure assignment need not copy any padding bits.
+43) It is possible for objects x and y with the same effective type T to have the same value when they are accessed as objects of type T, but to have different values in other contexts. In particular, if == is defined for type T, then x == y does not imply that memcmp(&x, &y, sizeof (T)) == 0. Furthermore, x == y does not necessarily imply that x and y have the same value; other operations on values of type T may distinguish between them.
+
+CODE:
+/*
+ * 验证 C99 条款 6.2.6.1 (General)
+ * 预期行为：正向测试运行通过，负向测试编译报错（本条款无约束，故无负向测试代码）。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <limits.h>
+#include <assert.h>
+
+int main(void) {
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 未指定表示：所有类型的表示未指定，除非本子条款说明。
+       此处不直接测试，通过后续测试间接验证对象表示的可访问性。 */
+
+    /* [2] 连续字节序列：对象由连续的一个或多个字节组成 */
+    int x = 0x12345678;
+    unsigned char *p = (unsigned char*)&x;
+    for (size_t i = 0; i < sizeof(x); i++) {
+        volatile unsigned char byte = p[i]; /* 遍历每个字节，验证连续性 */
+    }
+
+    /* [3] 纯二进制表示：unsigned char 和 unsigned bit-fields */
+    unsigned char c = 0;
+    for (int i = 0; i < CHAR_BIT; i++) {
+        c = (unsigned char)(1U << i);
+        assert(c == (1U << i)); /* 验证每一位的权重是 2^i */
+    }
+    struct Bits { unsigned int b : 3; };
+    struct Bits b;
+    b.b = 5;
+    assert(b.b == 5); /* 验证无符号位段能正确存储纯二进制值 */
+
+    /* [4] n x CHAR_BIT 位，对象表示，比较相等的值可能有不同对象表示 */
+    assert(sizeof(int) * CHAR_BIT > 0);
+    int a = 42;
+    unsigned char rep[sizeof(a)];
+    memcpy(rep, &a, sizeof(a)); /* 复制到 unsigned char[n] 得到对象表示 */
+
+    /* 测试 +0.0 和 -0.0 比较相等，但对象表示可能不同 (Footnote 43) */
+    double pos_zero = 0.0;
+    double neg_zero = -0.0;
+    assert(pos_zero == neg_zero);
+    if (memcmp(&pos_zero, &neg_zero, sizeof(double)) != 0) {
+        printf("[4] +0.0 and -0.0 compare equal but have different object representations.\n");
+    } else {
+        printf("[4] +0.0 and -0.0 have the same object representation on this platform.\n");
+    }
+
+    /* [5] 陷阱表示：自动变量可未初始化（可能含陷阱表示），只要不读取即无 UB (Footnote 41) */
+    unsigned int trap_var; /* 未初始化，可能是陷阱表示 */
+    /* 不读取 trap_var，避免 UB */
+
+    /* [6] 结构填充字节取未指定值，结构对象本身非陷阱表示 */
+    struct S { char c; int i; };
+    struct S s = {1, 2};
+    unsigned char *sp = (unsigned char*)&s;
+    volatile unsigned char padding_byte = sp[1]; /* 可能是填充字节，读取合法，值未指定 */
+
+    /* [7] 联合成员存储后，其他成员对应字节取未指定值 */
+    union U { int i; float f; };
+    union U u;
+    u.i = 42;
+    unsigned char *up = (unsigned char*)&u;
+    volatile unsigned char other_byte = up[0]; /* 读取合法，值未指定 */
+
+    /* [8] 多个对象表示不影响结果，不生成陷阱表示 */
+    /* +0.0 和 -0.0 有不同表示，但加 1.0 结果相同 */
+    assert(pos_zero + 1.0 == neg_zero + 1.0);
+
+    printf("All positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /* C99 6.2.6.1 条款没有定义程序员代码层面的约束（Constraints）。
+       本条款中的 "shall" 均针对实现（如 [3] 要求 unsigned char 使用纯二进制表示），
+       而非程序员代码。[5] 中的陷阱表示读取是未定义行为（UB），而非约束错误。
+       因此，本条款无负向测试代码。 */
+#endif
+
+    return 0;
+}

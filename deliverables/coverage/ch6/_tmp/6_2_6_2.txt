@@ -1,0 +1,84 @@
+ARTICLE: 6.2.6.2
+
+TEXT:
+Integer types
+[1] For unsigned integer types other than unsigned char, the bits of the object representation shall be divided into two groups: value bits and padding bits (there need not be any of the latter). If there are N value bits, each bit shall represent a different power of 2 between 1 and 2 , so that objects of that type shall be capable of representing values from 0 to 2 - 1 using a pure binary representation; this shall be known as the value representation. The values of any padding bits are unspecified.
+[2] For signed integer types, the bits of the object representation shall be divided into three groups: value bits, padding bits, and the sign bit. There need not be any padding bits; there shall be exactly one sign bit. Each bit that is a value bit shall have the same value as the same bit in the object representation of the corresponding unsigned type (if there are M value bits in the signed type and N in the unsigned type, then M <= N ). If the sign bit is zero, it shall not affect the resulting value. If the sign bit is one, the value shall be modified in one of the following ways: the corresponding value with sign bit 0 is negated (sign and magnitude); the sign bit has the value -(2 ) (two's complement); the sign bit has the value -(2 - 1) (ones' complement ). Which of these applies is implementation-defined, as is whether the value with sign bit 1 and all value bits zero (for the first two), or with sign bit and all value bits 1 (for ones' complement), is a trap representation or a normal value. In the case of sign and magnitude and ones' complement, if this representation is a normal value it is called a negative zero.
+[3] If the implementation supports negative zeros, they shall be generated only by: the &, |, ^, ~, <<, and >> operators with arguments that produce such a value; the +, -, *, /, and % operators where one argument is a negative zero and the result is zero; compound assignment operators based on the above cases. It is unspecified whether these cases actually generate a negative zero or a normal zero, and whether a negative zero becomes a normal zero when stored in an object.
+[4] If the implementation does not support negative zeros, the behavior of the &, |, ^, ~, <<, and >> operators with arguments that would produce such a value is undefined.
+[5] The values of any padding bits are unspecified. A valid (non-trap) object representation of a signed integer type where the sign bit is zero is a valid object representation of the corresponding unsigned type, and shall represent the same value. For any integer type, the object representation where all the bits are zero shall be a representation of the value zero in that type.
+[6] The precision of an integer type is the number of bits it uses to represent values, excluding any sign and padding bits. The width of an integer type is the same but including any sign bit; thus for unsigned integer types the two values are the same, while for signed integer types the width is one greater than the precision.
+Footnotes:
+44) Some combinations of padding bits might generate trap representations, for example, if one padding bit is a parity bit. Regardless, no arithmetic operation on valid values can generate a trap representation other than as part of an exceptional condition such as an overflow, and this cannot occur with unsigned types. All other combinations of padding bits are alternative object representations of the value specified by the value bits.
+45) Some combinations of padding bits might generate trap representations, for example, if one padding bit is a parity bit. Regardless, no arithmetic operation on valid values can generate a trap representation other than as part of an exceptional condition such as an overflow. All other combinations of padding bits are alternative object representations of the value specified by the value bits.
+
+CODE:
+/*
+ * 验证 C99 6.2.6.2 Integer types
+ * 预期行为：正向测试运行通过，负向测试编译报错（本条款无约束，故无负向测试）。
+ */
+#include <stdio.h>
+#include <limits.h>
+#include <assert.h>
+
+int main(void) {
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 无符号整数类型：纯二进制表示，值位与填充位 */
+    /* unsigned char 没有填充位，所有位都是值位，能表示 0 到 2^N - 1 */
+    unsigned char uc_max = 0;
+    for (int i = 0; i < CHAR_BIT; i++) {
+        uc_max = (unsigned char)((uc_max << 1) | 1);
+    }
+    assert(uc_max == UCHAR_MAX);
+
+    /* unsigned int 的值位表示 0 到 2^N - 1 的纯二进制 */
+    unsigned int ui_max = 0;
+    for (size_t i = 0; i < sizeof(unsigned int) * CHAR_BIT; i++) {
+        ui_max = (ui_max << 1) | 1u;
+    }
+    assert(ui_max == UINT_MAX);
+
+    /* [2] 有符号整数类型：值位、填充位、符号位 */
+    /* 符号位为0时不影响值 */
+    int pos_val = 42;
+    assert(pos_val == 42);
+
+    /* 符号位为1时的三种实现定义方式：sign and magnitude, two's complement, ones' complement */
+    printf("INT_MIN = %d, INT_MAX = %d\n", INT_MIN, INT_MAX);
+    if (INT_MIN == -INT_MAX - 1) {
+        printf("Representation: Two's complement\n");
+    } else if (INT_MIN == -INT_MAX) {
+        printf("Representation: Sign and magnitude or Ones' complement\n");
+        /* [2] 在 sign and magnitude 和 ones' complement 中，特定表示可能是负零 */
+    } else {
+        assert(0); /* 不符合三种标准方式 */
+    }
+
+    /* [3] 负零的产生（如果实现支持） */
+    /* 标准规定：如果支持负零，只能由 &, |, ^, ~, <<, >> 产生，或由 +, -, *, /, % 中一个参数为负零且结果为0产生 */
+    /* 标准还规定：是否实际产生负零是未指定的(unspecified) */
+    if (INT_MIN == -INT_MAX) {
+        /* 可能支持负零的表示法 */
+        int a = 0;
+        int b = ~0; /* 在 ones' complement 中可能是负零，在 sign and magnitude 中是 -INT_MAX */
+        /* 运算应正常执行，结果可能是正常零或负零，但存储到对象时可能变为正常零 */
+        int c = a + b; /* 如果 b 是负零，结果应为0 */
+        /* 由于未指定，只验证不崩溃，且结果在合理范围 */
+        assert(c == 0 || c == -INT_MAX);
+    }
+
+    /* [4] 如果实现不支持负零，相关位运算是未定义行为(UB)。
+       由于 UB 代码仍能编译通过，不能作为负向约束测试，此处略过运行时测试。 */
+
+    printf("All positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+    #if 0
+    /* 6.2.6.2 条款本身不包含 Constraints 段落，因此无负向约束测试。
+       注意：[4] 中提到的“不支持负零时的行为是未定义的(UB)”，
+       根据规则，UB 代码仍能编译通过，不能作为负向约束测试。 */
+    #endif
+
+    return 0;
+}

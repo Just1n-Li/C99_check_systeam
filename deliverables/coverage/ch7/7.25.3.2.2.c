@@ -1,0 +1,150 @@
+/*
+ * 测试 C99 7.25.3.2.2 —— wctrans 函数
+ *
+ * 预期行为：
+ *   正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应导致编译报错（放在 #if 0 中，不参与编译）。
+ *
+ * 条款要点：
+ *   [1] 原型：wctrans_t wctrans(const char *property);
+ *   [2] 构造一个 wctrans_t 值，描述由 property 字符串标识的宽字符映射。
+ *   [3] towctrans 描述中列出的字符串（"tolower"、"toupper"）在所有 locale 下
+ *       都必须是 wctrans 的合法 property 实参。
+ *   [4] 若 property 在当前 locale 的 LC_CTYPE 类别下标识有效映射，返回非零值，
+ *       且该值可作为 towctrans 的第二个实参；否则返回零。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <wctype.h>
+#include <locale.h>
+#include <string.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与声明一致 */
+static wctrans_t (*fp_wctrans)(const char *) = wctrans;
+
+int main(void)
+{
+    /* [1] 返回类型为 wctrans_t，参数为 const char * */
+    wctrans_t t;
+
+    /* [3] "tolower" 与 "toupper" 在所有 locale 下都必须是合法 property */
+    t = wctrans("tolower");
+    assert(t != (wctrans_t)0);          /* [4] 有效映射 -> 非零 */
+
+    t = wctrans("toupper");
+    assert(t != (wctrans_t)0);          /* [4] 有效映射 -> 非零 */
+
+    /* [4] 返回的非零值必须能作为 towctrans 的第二个实参使用 */
+    {
+        wctrans_t lower = wctrans("tolower");
+        wctrans_t upper = wctrans("toupper");
+        wint_t wc;
+
+        assert(lower != (wctrans_t)0);
+        assert(upper != (wctrans_t)0);
+
+        /* 用返回的映射值调用 towctrans，验证其可用性 */
+        wc = towctrans(L'A', lower);
+        assert(wc == L'a');
+
+        wc = towctrans(L'a', upper);
+        assert(wc == L'A');
+
+        /* 非字母字符在 tolower/toupper 映射下保持不变 */
+        wc = towctrans(L'5', lower);
+        assert(wc == L'5');
+        wc = towctrans(L'5', upper);
+        assert(wc == L'5');
+    }
+
+    /* [4] 无效 property 应返回零 */
+    t = wctrans("no_such_mapping_xyz");
+    assert(t == (wctrans_t)0);
+
+    t = wctrans("");
+    assert(t == (wctrans_t)0);
+
+    /* [2] 在 "C" locale 下同样成立 */
+    {
+        char *old = setlocale(LC_CTYPE, NULL);
+        char saved[64];
+        if (old != NULL) {
+            strncpy(saved, old, sizeof saved - 1);
+            saved[sizeof saved - 1] = '\0';
+        } else {
+            saved[0] = '\0';
+        }
+
+        if (setlocale(LC_CTYPE, "C") != NULL) {
+            wctrans_t lc = wctrans("tolower");
+            wctrans_t uc = wctrans("toupper");
+            assert(lc != (wctrans_t)0);
+            assert(uc != (wctrans_t)0);
+            assert(towctrans(L'Z', lc) == L'z');
+            assert(towctrans(L'z', uc) == L'Z');
+            assert(wctrans("bogus") == (wctrans_t)0);
+        }
+
+        if (saved[0] != '\0')
+            setlocale(LC_CTYPE, saved);
+    }
+
+    /* [1] 通过函数指针调用，验证原型 */
+    assert(fp_wctrans("tolower") != (wctrans_t)0);
+    assert(fp_wctrans("toupper") != (wctrans_t)0);
+    assert(fp_wctrans("nope") == (wctrans_t)0);
+
+    printf("C99 7.25.3.2.2 wctrans: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wctrans 的参数类型为 const char *」：
+ * 传入 wchar_t* 而非 char*，gcc -std=c99 应报错（不兼容指针类型）。 */
+#include <wchar.h>
+void bad_arg_type(void)
+{
+    wchar_t *p = L"tolower";
+    wctrans_t t = wctrans(p);   /* 期望报错：参数类型不兼容 */
+    (void)t;
+}
+
+/* 违反约束「wctrans 的参数类型为 const char *」：
+ * 传入整数，gcc -std=c99 应报错（实参类型不匹配）。 */
+void bad_arg_int(void)
+{
+    wctrans_t t = wctrans(42);  /* 期望报错：int 不能转换为 const char * */
+    (void)t;
+}
+
+/* 违反约束「wctrans 需要恰好一个实参」：
+ * 无实参调用，gcc -std=c99 应报错（实参数量不匹配）。 */
+void bad_too_few_args(void)
+{
+    wctrans_t t = wctrans();    /* 期望报错：实参太少 */
+    (void)t;
+}
+
+/* 违反约束「wctrans 需要恰好一个实参」：
+ * 两个实参调用，gcc -std=c99 应报错（实参数量不匹配）。 */
+void bad_too_many_args(void)
+{
+    wctrans_t t = wctrans("tolower", "toupper"); /* 期望报错：实参太多 */
+    (void)t;
+}
+
+/* 违反约束「wctrans 的返回类型为 wctrans_t」：
+ * 将返回值赋给不兼容的结构体类型，gcc -std=c99 应报错。 */
+struct NotWctrans { int x; };
+void bad_return_type(void)
+{
+    struct NotWctrans s = wctrans("tolower"); /* 期望报错：类型不兼容 */
+    (void)s;
+}
+
+#endif /* 负向测试结束 */

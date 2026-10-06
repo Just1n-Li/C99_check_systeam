@@ -1,0 +1,56 @@
+[
+ {
+  "article": "6.2",
+  "name": "概念",
+  "coverage": 95.6,
+  "subclauses": 8
+ },
+ {
+  "article": "6.3",
+  "name": "转换",
+  "coverage": 96.9,
+  "subclauses": 12
+ },
+ {
+  "article": "6.4",
+  "name": "词法元素",
+  "coverage": 95.4,
+  "subclauses": 15
+ },
+ {
+  "article": "6.5",
+  "name": "表达式",
+  "coverage": 100.0,
+  "subclauses": 29
+ },
+ {
+  "article": "6.6",
+  "name": "常量表达式",
+  "coverage": 90.0,
+  "subclauses": 1
+ },
+ {
+  "article": "6.7",
+  "name": "声明",
+  "coverage": 96.6,
+  "subclauses": 16
+ },
+ {
+  "article": "6.8",
+  "name": "语句与块",
+  "coverage": 100.0,
+  "subclauses": 16
+ },
+ {
+  "article": "6.9",
+  "name": "外部定义",
+  "coverage": 100.0,
+  "subclauses": 3
+ },
+ {
+  "article": "6.10",
+  "name": "预处理",
+  "coverage": 97.1,
+  "subclauses": 14
+ }
+]

@@ -1,0 +1,229 @@
+=== ARTICLE 7.21.3.2 ===
+--- TEXT ---
+The strncat function
+Synopsis:
+[1] #include <string.h> char *strncat(char * restrict s1, const char * restrict s2, size_t n);
+Description:
+[2] The strncat function appends not more than n characters (a null character and characters that follow it are not appended) from the array pointed to by s2 to the end of the string pointed to by s1. The initial character of s2 overwrites the null character at the end of s1. A terminating null character is always appended to the result. If copying takes place between objects that overlap, the behavior is undefined.
+Returns:
+[3] The strncat function returns the value of s1.
+Forward references: the strlen function (7.21.6.3).
+Footnotes:
+270) Thus, the maximum number of characters that can end up in the array pointed to by s1 is strlen(s1)+n+1.
+--- CODE ---
+/*
+ * 测试 C99 7.21.3.2 —— strncat 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明：char *strncat(char * restrict s1, const char * restrict s2, size_t n);
+ *   [2] 语义：最多追加 n 个字符；s2 的 '\0' 及其后字符不追加；
+ *       s2 首字符覆盖 s1 末尾的 '\0'；结果总是以 '\0' 结尾；
+ *       重叠时行为未定义（UB，不作为负向测试）。
+ *   [3] 返回值：返回 s1 的值。
+ *   Footnote 270：s1 中最终最多 strlen(s1)+n+1 个字符。
+ *   Forward reference：strlen (7.21.6.3)。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：返回类型为 char *，参数为 (char * restrict, const char * restrict, size_t) */
+static char *(*fp_strncat)(char * restrict, const char * restrict, size_t) = strncat;
+
+int main(void)
+{
+    /* [1] 原型可用性：函数指针赋值成功即证明签名匹配 */
+    assert(fp_strncat == strncat);
+
+    /* [2] 基本追加：n 足够大，等价于完整拼接 */
+    {
+        char s1[32] = "Hello";
+        char *r = strncat(s1, ", World", 20);
+        assert(strcmp(s1, "Hello, World") == 0);
+        /* [3] 返回值必须等于 s1 */
+        assert(r == s1);
+    }
+
+    /* [2] 只追加不超过 n 个字符：n 小于 s2 长度 */
+    {
+        char s1[32] = "abc";
+        char *r = strncat(s1, "defghij", 3);
+        assert(strcmp(s1, "abcdef") == 0);   /* 只追加 "def" */
+        assert(r == s1);
+    }
+
+    /* [2] s2 中的 '\0' 及其后字符不被追加 */
+    {
+        char s1[32] = "X";
+        /* s2 是 "YZ\0QQQ"，n 很大，但遇到 '\0' 就停止 */
+        char s2[8] = { 'Y', 'Z', '\0', 'Q', 'Q', 'Q', '\0', '\0' };
+        char *r = strncat(s1, s2, 100);
+        assert(strcmp(s1, "XYZ") == 0);
+        assert(r == s1);
+    }
+
+    /* [2] s2 首字符覆盖 s1 末尾的 '\0' */
+    {
+        char s1[16] = "ab";      /* 内部: 'a','b','\0' */
+        strncat(s1, "cd", 2);
+        /* 若首字符未覆盖 '\0'，结果会是 "ab" 而非 "abcd" */
+        assert(s1[0] == 'a');
+        assert(s1[1] == 'b');
+        assert(s1[2] == 'c');    /* 覆盖了原来的 '\0' */
+        assert(s1[3] == 'd');
+        assert(s1[4] == '\0');
+        assert(strcmp(s1, "abcd") == 0);
+    }
+
+    /* [2] 结果总是以 '\0' 结尾（即使 n == 0） */
+    {
+        char s1[16] = "keep";
+        char *r = strncat(s1, "IGNORED", 0);
+        assert(strcmp(s1, "keep") == 0);
+        assert(s1[4] == '\0');
+        assert(r == s1);
+    }
+
+    /* [2] n == 0 且 s1 为空串 */
+    {
+        char s1[8] = "";
+        strncat(s1, "abc", 0);
+        assert(s1[0] == '\0');
+        assert(strlen(s1) == 0);
+    }
+
+    /* [2] s2 为空串：不追加任何字符，但结果仍以 '\0' 结尾 */
+    {
+        char s1[16] = "base";
+        char *r = strncat(s1, "", 10);
+        assert(strcmp(s1, "base") == 0);
+        assert(r == s1);
+    }
+
+    /* [2] s1 为空串：s2 首字符覆盖 s1 的 '\0' */
+    {
+        char s1[16] = "";
+        strncat(s1, "xyz", 2);
+        assert(strcmp(s1, "xy") == 0);
+        assert(s1[2] == '\0');
+    }
+
+    /* [2] 追加恰好 n 个字符（n == strlen(s2)） */
+    {
+        char s1[16] = "12";
+        strncat(s1, "345", 3);
+        assert(strcmp(s1, "12345") == 0);
+    }
+
+    /* [2] 追加少于 n 个字符（n > strlen(s2)） */
+    {
+        char s1[16] = "12";
+        strncat(s1, "34", 100);
+        assert(strcmp(s1, "1234") == 0);
+    }
+
+    /* Footnote 270：最终长度 <= strlen(初始 s1) + n + 1 */
+    {
+        char s1[64] = "start";
+        size_t init_len = strlen(s1);
+        size_t n = 5;
+        strncat(s1, "abcdefghij", n);
+        assert(strlen(s1) <= init_len + n);
+        assert(strlen(s1) + 1 <= init_len + n + 1);
+        assert(strcmp(s1, "startabcde") == 0);
+    }
+
+    /* [2] 追加含嵌入 '\0' 的 s2：只取到第一个 '\0' 之前 */
+    {
+        char s1[32] = "A";
+        char s2[6] = { 'B', 'C', '\0', 'D', 'E', '\0' };
+        strncat(s1, s2, 5);
+        assert(strcmp(s1, "ABC") == 0);
+        assert(s1[3] == '\0');
+    }
+
+    /* [3] 返回值可链式使用 */
+    {
+        char s1[32] = "a";
+        char *r = strncat(strncat(s1, "b", 1), "c", 1);
+        assert(r == s1);
+        assert(strcmp(s1, "abc") == 0);
+    }
+
+    /* [2] 与 strlen (7.21.6.3) 配合验证长度 */
+    {
+        char s1[32] = "hello";
+        strncat(s1, "world!!!", 5);
+        assert(strlen(s1) == 10);
+        assert(strcmp(s1, "helloworld") == 0);
+    }
+
+    printf("All positive tests for C99 7.21.3.2 (strncat) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「s1 参数类型为 char *」：传入 const char * 会丢弃 const 限定，
+ * 且 strncat 需要可写目标。gcc -std=c99 应报错（discards qualifiers）。 */
+{
+    const char *s1 = "abc";
+    char s2[] = "def";
+    strncat(s1, s2, 3);   /* error: passing 'const char *' to 'char *' */
+}
+
+/* 违反约束「s2 参数类型为 const char *」：传入非字符指针（int *）类型不兼容。
+ * gcc -std=c99 应报错（incompatible pointer type）。 */
+{
+    char s1[16] = "abc";
+    int s2[4] = { 1, 2, 3, 4 };
+    strncat(s1, s2, 2);   /* error: incompatible pointer type for arg 2 */
+}
+
+/* 违反约束「n 参数类型为 size_t」：传入结构体类型，无法隐式转换。
+ * gcc -std=c99 应报错。 */
+{
+    struct S { int x; } n;
+    char s1[16] = "abc";
+    strncat(s1, "def", n);   /* error: incompatible type for arg 3 */
+}
+
+/* 违反约束「strncat 返回 char *，不能作为左值被赋值」：
+ * 函数调用结果不是左值，对其赋值应编译报错。 */
+{
+    char s1[16] = "abc";
+    strncat(s1, "def", 3) = s1;   /* error: lvalue required as left operand of assignment */
+}
+
+/* 违反约束「strncat 需要 3 个实参」：实参个数不足。
+ * gcc -std=c99 应报错（too few arguments）。 */
+{
+    char s1[16] = "abc";
+    strncat(s1, "def");   /* error: too few arguments to function 'strncat' */
+}
+
+/* 违反约束「strncat 需要 3 个实参」：实参个数过多。
+ * gcc -std=c99 应报错（too many arguments）。 */
+{
+    char s1[16] = "abc";
+    strncat(s1, "def", 3, 4);   /* error: too many arguments to function 'strncat' */
+}
+
+/* 违反约束「strncat 返回 char *，不能用于需要算术类型的上下文」：
+ * 对函数返回值做乘法，指针不能相乘。gcc -std=c99 应报错。 */
+{
+    char s1[16] = "abc";
+    char *p = strncat(s1, "def", 3);
+    p * p;   /* error: invalid operands to binary * (have 'char *' and 'char *') */
+}
+
+#endif /* 负向测试结束 */

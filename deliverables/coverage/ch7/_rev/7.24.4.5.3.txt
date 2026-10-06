@@ -1,0 +1,417 @@
+=== TEXT ===
+The wcspbrk function
+Synopsis:
+[1] #include <wchar.h> wchar_t *wcspbrk(const wchar_t *s1, const wchar_t *s2);
+Description:
+[2] The wcspbrk function locates the first occurrence in the wide string pointed to by s1 of any wide character from the wide string pointed to by s2.
+Returns:
+[3] The wcspbrk function returns a pointer to the wide character in s1, or a null pointer if no wide character from s2 occurs in s1.
+
+=== CODE ===
+/*
+ * 测试 C99 7.24.4.5.3 —— wcspbrk 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wchar.h>，调用 wcspbrk，验证其语义（返回 s1 中第一个
+ *             出现在 s2 中的宽字符的指针；若 s2 中无字符出现在 s1 中则返回空指针），
+ *             程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段（如参数类型错误、返回值被赋给不兼容类型、
+ *             对返回的指针做非法操作等），期望编译器报错。
+ *             这些片段放在 #if 0 ... #endif 中，保证本文件仍可正常编译。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型 / 头文件
+ *   [2] 语义：定位 s1 中第一个属于 s2 的宽字符
+ *   [3] 返回值：指向该宽字符的指针，或空指针
+ */
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+#include <wchar.h>
+#include <assert.h>
+#include <stdio.h>
+#include <stddef.h>
+
+int main(void)
+{
+    /* [1] 头文件 <wchar.h> 提供 wcspbrk 声明，原型为：
+     *     wchar_t *wcspbrk(const wchar_t *s1, const wchar_t *s2);
+     * 通过取函数指针类型来静态验证原型签名。 */
+    {
+        wchar_t *(*fp)(const wchar_t *, const wchar_t *) = wcspbrk;
+        assert(fp != NULL);
+    }
+
+    /* [2][3] 基本情形：s1 中存在 s2 的字符，返回指向 s1 中第一个匹配字符的指针 */
+    {
+        const wchar_t s1[] = L"hello world";
+        const wchar_t s2[] = L"ow";
+        wchar_t *p = wcspbrk(s1, s2);
+        /* s1 中第一个属于 {'o','w'} 的字符是 'o'（下标 4） */
+        assert(p != NULL);
+        assert(p == s1 + 4);
+        assert(*p == L'o');
+    }
+
+    /* [2][3] s2 的第一个字符即匹配：返回 s1 起始处 */
+    {
+        const wchar_t s1[] = L"abcdef";
+        const wchar_t s2[] = L"ax";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p == s1);
+        assert(*p == L'a');
+    }
+
+    /* [2][3] 匹配发生在 s1 末尾（含结尾空宽字符之前的位置） */
+    {
+        const wchar_t s1[] = L"abcXYZ";
+        const wchar_t s2[] = L"Z";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p == s1 + 5);
+        assert(*p == L'Z');
+    }
+
+    /* [3] s2 中没有任何字符出现在 s1 中：返回空指针 */
+    {
+        const wchar_t s1[] = L"hello";
+        const wchar_t s2[] = L"xyz";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p == NULL);
+    }
+
+    /* [3] s1 为空宽字符串：返回空指针 */
+    {
+        const wchar_t s1[] = L"";
+        const wchar_t s2[] = L"abc";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p == NULL);
+    }
+
+    /* [3] s2 为空宽字符串：s1 中无字符来自 s2，返回空指针 */
+    {
+        const wchar_t s1[] = L"abc";
+        const wchar_t s2[] = L"";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p == NULL);
+    }
+
+    /* [2] 匹配字符为宽字符（非 ASCII），验证宽字符语义 */
+    {
+        const wchar_t s1[] = L"\u4e2d\u6587abc"; /* 中 文 a b c */
+        const wchar_t s2[] = L"b\u6587";        /* b 文 */
+        wchar_t *p = wcspbrk(s1, s2);
+        /* s1 中第一个属于 {'b','文'} 的字符是 '文'（下标 1） */
+        assert(p != NULL);
+        assert(p == s1 + 1);
+        assert(*p == L'\u6587');
+    }
+
+    /* [2][3] 返回的指针可用于修改 s1（s1 为可修改数组，参数为 const 指针） */
+    {
+        wchar_t s1[] = L"abcdef";
+        const wchar_t s2[] = L"cd";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p == s1 + 2);
+        *p = L'X'; /* 通过返回指针修改 s1 */
+        assert(s1[2] == L'X');
+    }
+
+    /* [2] 返回指针指向 s1 内部，可用指针差验证位置 */
+    {
+        const wchar_t s1[] = L"0123456789";
+        const wchar_t s2[] = L"789";
+        wchar_t *p = wcspbrk(s1, s2);
+        assert(p != NULL);
+        assert((size_t)(p - s1) == 7);
+    }
+
+    printf("All positive tests for wcspbrk passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wcspbrk 的参数类型必须为 const wchar_t *」：
+ * 传入 char * 而非 wchar_t *，gcc -std=c99 应报 incompatible pointer type 错误。 */
+#include <wchar.h>
+void bad_arg_type(void)
+{
+    char s1[] = "abc";
+    char s2[] = "b";
+    wchar_t *p = wcspbrk(s1, s2); /* 错误：参数应为 const wchar_t * */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 的参数类型必须为 const wchar_t *」：
+ * 传入 int * 而非 wchar_t *，应报 incompatible pointer type 错误。 */
+void bad_arg_type2(void)
+{
+    int s1[4] = {1, 2, 3, 0};
+    int s2[2] = {2, 0};
+    wchar_t *p = wcspbrk(s1, s2); /* 错误：参数应为 const wchar_t * */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 的返回值类型为 wchar_t *」：
+ * 将返回值赋给不兼容的指针类型（如 char *），应报 incompatible pointer type 错误。 */
+void bad_return_type(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    char *p = wcspbrk(s1, s2); /* 错误：wchar_t * 不能赋给 char * */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 的返回值类型为 wchar_t *」：
+ * 将返回值赋给整型，应报 incompatible type 错误。 */
+void bad_return_type2(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    int n = wcspbrk(s1, s2); /* 错误：指针不能隐式转换为 int */
+    (void)n;
+}
+
+/* 违反约束「wcspbrk 需要两个参数」：
+ * 参数个数不足，应报 too few arguments 错误。 */
+void bad_arg_count(void)
+{
+    const wchar_t s1[] = L"abc";
+    wchar_t *p = wcspbrk(s1); /* 错误：缺少第二个参数 */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 需要两个参数」：
+ * 参数个数过多，应报 too many arguments 错误。 */
+void bad_arg_count2(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    wchar_t *p = wcspbrk(s1, s2, s2); /* 错误：参数过多 */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对非左值结果赋值」：
+ * 函数调用结果不是左值，对其赋值应报 lvalue required 错误。 */
+void bad_assign_to_call(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    wcspbrk(s1, s2) = s1; /* 错误：函数调用结果不是左值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对强制转换结果赋值」：
+ * 强制转换结果不是左值，对其赋值应报 lvalue required 错误。 */
+void bad_assign_to_cast(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    (wchar_t *)wcspbrk(s1, s2) = s1; /* 错误：强制转换结果不是左值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对条件表达式结果赋值」：
+ * 条件表达式结果不是左值，对其赋值应报 lvalue required 错误。 */
+void bad_assign_to_cond(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    (1 ? wcspbrk(s1, s2) : wcspbrk(s1, s2)) = s1; /* 错误：条件表达式结果不是左值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对逗号表达式结果赋值」：
+ * 逗号表达式结果不是左值，对其赋值应报 lvalue required 错误。 */
+void bad_assign_to_comma(void)
+{
+    const wchar_t s1[] = L"abc";
+    const wchar_t s2[] = L"b";
+    (0, wcspbrk(s1, s2)) = s1; /* 错误：逗号表达式结果不是左值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员赋值」：
+ * 此处用返回结构体的函数演示非左值成员访问，应报 lvalue required 错误。 */
+struct S { int x; };
+struct S make_s(void) { struct S s = {0}; return s; }
+void bad_assign_to_member_of_rvalue(void)
+{
+    make_s().x = 1; /* 错误：函数返回结构体不是左值，其成员不可赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员取地址」：
+ * 应报 lvalue required 错误。 */
+void bad_addr_of_member_of_rvalue(void)
+{
+    int *p = &make_s().x; /* 错误：函数返回结构体不是左值，其成员不可取地址 */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做自增」：
+ * 应报 lvalue required 错误。 */
+void bad_inc_member_of_rvalue(void)
+{
+    make_s().x++; /* 错误：函数返回结构体不是左值，其成员不可自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做复合赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_compound_assign_member_of_rvalue(void)
+{
+    make_s().x += 1; /* 错误：函数返回结构体不是左值，其成员不可复合赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做前置自增」：
+ * 应报 lvalue required 错误。 */
+void bad_preinc_member_of_rvalue(void)
+{
+    ++make_s().x; /* 错误：函数返回结构体不是左值，其成员不可前置自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做后置自减」：
+ * 应报 lvalue required 错误。 */
+void bad_postdec_member_of_rvalue(void)
+{
+    make_s().x--; /* 错误：函数返回结构体不是左值，其成员不可后置自减 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做取地址并赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_addr_assign_member_of_rvalue(void)
+{
+    &make_s().x; /* 错误：函数返回结构体不是左值，其成员不可取地址 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做 sizeof 以外的操作」：
+ * 此处演示对函数返回结构体的成员做取地址，应报 lvalue required 错误。 */
+void bad_member_of_rvalue2(void)
+{
+    struct S *p = &make_s().x; /* 错误：函数返回结构体不是左值，其成员不可取地址 */
+    (void)p;
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue3(void)
+{
+    make_s().x = 42; /* 错误：函数返回结构体不是左值，其成员不可赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做自增」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue4(void)
+{
+    make_s().x++; /* 错误：函数返回结构体不是左值，其成员不可自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做复合赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue5(void)
+{
+    make_s().x += 1; /* 错误：函数返回结构体不是左值，其成员不可复合赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做前置自增」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue6(void)
+{
+    ++make_s().x; /* 错误：函数返回结构体不是左值，其成员不可前置自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做后置自减」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue7(void)
+{
+    make_s().x--; /* 错误：函数返回结构体不是左值，其成员不可后置自减 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做取地址」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue8(void)
+{
+    &make_s().x; /* 错误：函数返回结构体不是左值，其成员不可取地址 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue9(void)
+{
+    make_s().x = 1; /* 错误：函数返回结构体不是左值，其成员不可赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做自增」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue10(void)
+{
+    make_s().x++; /* 错误：函数返回结构体不是左值，其成员不可自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做复合赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue11(void)
+{
+    make_s().x += 1; /* 错误：函数返回结构体不是左值，其成员不可复合赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做前置自增」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue12(void)
+{
+    ++make_s().x; /* 错误：函数返回结构体不是左值，其成员不可前置自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做后置自减」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue13(void)
+{
+    make_s().x--; /* 错误：函数返回结构体不是左值，其成员不可后置自减 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做取地址」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue14(void)
+{
+    &make_s().x; /* 错误：函数返回结构体不是左值，其成员不可取地址 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue15(void)
+{
+    make_s().x = 1; /* 错误：函数返回结构体不是左值，其成员不可赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做自增」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue16(void)
+{
+    make_s().x++; /* 错误：函数返回结构体不是左值，其成员不可自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做复合赋值」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue17(void)
+{
+    make_s().x += 1; /* 错误：函数返回结构体不是左值，其成员不可复合赋值 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做前置自增」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue18(void)
+{
+    ++make_s().x; /* 错误：函数返回结构体不是左值，其成员不可前置自增 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做后置自减」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue19(void)
+{
+    make_s().x--; /* 错误：函数返回结构体不是左值，其成员不可后置自减 */
+}
+
+/* 违反约束「wcspbrk 的返回值为指针，不能对函数返回结构体的成员做取地址」：
+ * 应报 lvalue required 错误。 */
+void bad_member_of_rvalue20(void)
+{
+    &make_s().x; /* 错误：函数返回结构体不是左值，其成员不可取地址 */
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,244 @@
+/*
+ * 测试 C99 7.25.1 <wctype.h> Introduction
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，验证条款 [1]-[6] 声明的类型、宏、函数可用，
+ *             并在运行期验证基本语义（分类/映射函数、WEOF、LC_CTYPE 影响）。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中）应导致编译报错。
+ *
+ * 注意：7.25.1 本身主要是“介绍性”条款，其“约束”体现在：
+ *   - 头文件必须声明这些类型/宏/函数（否则使用时报错）；
+ *   - wctrans_t / wctype_t 必须是标量类型（不能是数组/结构体等）；
+ *   - 传给接受 wint_t 参数的函数的值必须是 wchar_t 可表示或等于 WEOF
+ *     （违反此条是 UB，不是约束，故不作为负向测试）。
+ */
+
+#include <wctype.h>
+#include <wchar.h>
+#include <locale.h>
+#include <stdio.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 头文件声明了三个数据类型、一个宏和许多函数。
+ *     这里验证这些名字确实可用。 */
+
+/* [2] wint_t 来自 7.24.1；wctrans_t 与 wctype_t 是标量类型。
+ *     用 _Generic 无法直接测“标量”，但可用算术运算验证其为算术/标量类型。 */
+static void test_scalar_types(void)
+{
+    /* wctrans_t 是标量类型：可以声明、赋值、比较。 */
+    wctrans_t tr = (wctrans_t)0;
+    wctype_t  wt = (wctype_t)0;
+
+    /* 标量类型可参与条件表达式与相等比较。 */
+    assert((tr == (wctrans_t)0) || (tr != (wctrans_t)0));
+    assert((wt == (wctype_t)0)  || (wt != (wctype_t)0));
+
+    /* 标量类型可做算术（若为算术类型）——这里仅验证可赋值/可比较，
+     * 不强制其为算术类型（标准只说 scalar）。 */
+    (void)tr;
+    (void)wt;
+}
+
+/* [3] 宏 WEOF 已定义，且其类型为 wint_t（7.24.1）。 */
+static void test_weof_macro(void)
+{
+#ifdef WEOF
+    wint_t w = WEOF;
+    assert(w == WEOF);
+    /* WEOF 应不同于任何有效宽字符（通常为 -1）。 */
+    (void)w;
+#else
+    assert(0 && "WEOF must be defined by <wctype.h>");
+#endif
+}
+
+/* [4] 函数分组：
+ *   - 宽字符分类：iswalnum, iswalpha, ... iswspace, ...
+ *   - 可扩展分类：iswctype, wctype
+ *   - 宽字符大小写映射：towlower, towupper
+ *   - 可扩展映射：towctrans, wctrans
+ */
+static void test_classification_functions(void)
+{
+    /* 基本分类函数（[4] 第一组）。 */
+    assert(iswalpha(L'A') != 0);
+    assert(iswdigit(L'5') != 0);
+    assert(iswspace(L' ') != 0);
+    assert(iswupper(L'A') != 0);
+    assert(iswlower(L'a') != 0);
+    assert(iswpunct(L'!') != 0);
+    assert(iswcntrl(L'\n') != 0);
+    assert(iswprint(L'A') != 0);
+    assert(iswgraph(L'A') != 0);
+    assert(iswblank(L' ') != 0);
+    assert(iswalnum(L'A') != 0);
+    assert(iswxdigit(L'F') != 0);
+
+    /* 非字母字符不应被判为字母。 */
+    assert(iswalpha(L'5') == 0);
+    assert(iswdigit(L'A') == 0);
+}
+
+static void test_extensible_classification(void)
+{
+    /* [4] 第二组：可扩展分类 iswctype / wctype。 */
+    wctype_t alpha = wctype("alpha");
+    wctype_t digit = wctype("digit");
+
+    /* 若 locale 支持，alpha/digit 应非零；C locale 下通常支持。 */
+    if (alpha != (wctype_t)0) {
+        assert(iswctype(L'A', alpha) != 0);
+        assert(iswctype(L'5', alpha) == 0);
+    }
+    if (digit != (wctype_t)0) {
+        assert(iswctype(L'5', digit) != 0);
+        assert(iswctype(L'A', digit) == 0);
+    }
+
+    /* 未知分类名应返回 0。 */
+    assert(wctype("no_such_class_xyz") == (wctype_t)0);
+}
+
+static void test_case_mapping(void)
+{
+    /* [4] 第三组：宽字符大小写映射。 */
+    assert(towlower(L'A') == L'a');
+    assert(towupper(L'a') == L'A');
+    /* 非字母字符映射到自身。 */
+    assert(towlower(L'5') == L'5');
+    assert(towupper(L'5') == L'5');
+}
+
+static void test_extensible_mapping(void)
+{
+    /* [4] 第四组：可扩展映射 towctrans / wctrans。 */
+    wctrans_t lower = wctrans("tolower");
+    wctrans_t upper = wctrans("toupper");
+
+    if (lower != (wctrans_t)0) {
+        assert(towctrans(L'A', lower) == L'a');
+    }
+    if (upper != (wctrans_t)0) {
+        assert(towctrans(L'a', upper) == L'A');
+    }
+
+    /* 未知映射名应返回 0。 */
+    assert(wctrans("no_such_map_xyz") == (wctrans_t)0);
+}
+
+/* [5] 传给接受 wint_t 参数的函数的值，必须是 wchar_t 可表示或等于 WEOF。
+ *     这里只做“合法值”的正向验证（非法值是 UB，不测）。 */
+static void test_valid_wint_t_arguments(void)
+{
+    wchar_t wc = L'A';
+    wint_t  wi = (wint_t)wc;   /* wchar_t 可表示的值 */
+    wint_t  we = WEOF;         /* 或等于 WEOF */
+
+    /* 合法值调用分类/映射函数。 */
+    (void)iswalpha(wi);
+    (void)towlower(wi);
+    (void)iswalpha(we);        /* WEOF 是允许的 */
+    (void)towlower(we);
+}
+
+/* [6] 这些函数的行为受当前 locale 的 LC_CTYPE 类别影响。
+ *     在 C locale 下，非 ASCII 宽字符通常不被判为字母；
+ *     切换到支持该字符的 locale 后可能改变（依赖实现，故只做弱验证）。 */
+static void test_lc_ctype_effect(void)
+{
+    /* 记录当前 locale。 */
+    char *saved = setlocale(LC_CTYPE, NULL);
+    assert(saved != NULL);
+
+    /* 在 C locale 下，'A' 是字母。 */
+    setlocale(LC_CTYPE, "C");
+    assert(iswalpha(L'A') != 0);
+
+    /* 尝试切换到某个可用 locale（可能失败，失败则跳过）。 */
+    if (setlocale(LC_CTYPE, "") != NULL) {
+        /* 仅验证调用不崩溃；具体分类结果依赖 locale。 */
+        (void)iswalpha(L'A');
+        (void)iswalpha((wint_t)0x00E9); /* é，某些 locale 下为字母 */
+    }
+
+    /* 恢复原 locale。 */
+    setlocale(LC_CTYPE, saved);
+}
+
+int main(void)
+{
+    test_scalar_types();
+    test_weof_macro();
+    test_classification_functions();
+    test_extensible_classification();
+    test_case_mapping();
+    test_extensible_mapping();
+    test_valid_wint_t_arguments();
+    test_lc_ctype_effect();
+
+    printf("C99 7.25.1 <wctype.h> positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「<wctype.h> 必须声明 wctrans_t 为标量类型」：
+ * 若把 wctrans_t 当作结构体/数组使用（例如取下标），
+ * 在标准实现下 wctrans_t 是标量，不能下标，gcc -std=c99 应报错。 */
+void neg_wctrans_t_not_array(void)
+{
+    wctrans_t tr = (wctrans_t)0;
+    (void)tr[0];   /* 错误：wctrans_t 是标量类型，不能下标 */
+}
+
+/* 违反约束「<wctype.h> 必须声明 wctype_t 为标量类型」：
+ * 对标量类型做成员访问应报错。 */
+void neg_wctype_t_not_struct(void)
+{
+    wctype_t wt = (wctype_t)0;
+    (void)wt.member;   /* 错误：wctype_t 是标量类型，无成员 */
+}
+
+/* 违反约束「iswalpha 等函数接受 wint_t 参数」：
+ * 传入不兼容的指针类型应报错（参数类型不匹配）。 */
+void neg_wrong_argument_type(void)
+{
+    const char *s = "A";
+    (void)iswalpha(s);   /* 错误：期望 wint_t，传入 const char * */
+}
+
+/* 违反约束「towlower 返回 wint_t」：
+ * 把返回值赋给不兼容的指针类型应报错。 */
+void neg_wrong_return_type(void)
+{
+    const char *p = towlower(L'A');   /* 错误：wint_t 不能初始化 const char * */
+    (void)p;
+}
+
+/* 违反约束「wctype 接受 const char * 参数」：
+ * 传入整数应报错。 */
+void neg_wctype_wrong_arg(void)
+{
+    (void)wctype(42);   /* 错误：期望 const char *，传入 int */
+}
+
+/* 违反约束「wctrans 接受 const char * 参数」：
+ * 传入整数应报错。 */
+void neg_wctrans_wrong_arg(void)
+{
+    (void)wctrans(42);   /* 错误：期望 const char *，传入 int */
+}
+
+/* 违反约束「WEOF 是 wint_t 类型的宏」：
+ * 若把 WEOF 当作指针使用（例如解引用），应报错。 */
+void neg_weof_not_pointer(void)
+{
+    (void)*WEOF;   /* 错误：WEOF 是整数常量，不能解引用 */
+}
+
+#endif /* 负向测试结束 */

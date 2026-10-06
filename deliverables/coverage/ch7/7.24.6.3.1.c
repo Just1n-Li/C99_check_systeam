@@ -1,0 +1,226 @@
+/*
+ * 测试 C99 7.24.6.3.1 —— mbrlen 函数
+ *
+ * 预期行为：
+ *   正向测试：程序应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的代码片段应被编译器拒绝（编译报错），
+ *             这些片段统一放在 #if 0 ... #endif 中，不影响本文件编译。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型 / 头文件 <wchar.h>
+ *   [2] 语义：等价于 mbrtowc(NULL, s, n, ps != NULL ? ps : &internal)，
+ *       且 ps 表达式只求值一次
+ *   [3] 返回值范围：0..n、 (size_t)(-2)、 (size_t)(-1)
+ */
+
+#include <wchar.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型存在性检查：取函数指针，类型必须与标准原型一致。
+ *     size_t mbrlen(const char * restrict, size_t, mbstate_t * restrict);
+ *     若原型不匹配，此赋值会触发编译诊断。 */
+static size_t (*mbrlen_proto_check)(const char * restrict, size_t,
+                                    mbstate_t * restrict) = mbrlen;
+
+/* 用于验证 [2] 中 “ps 表达式只求值一次” 的计数器 */
+static int ps_eval_count = 0;
+
+static mbstate_t *counting_ps(mbstate_t *p)
+{
+    ps_eval_count++;
+    return p;
+}
+
+int main(void)
+{
+    /* 使用 UTF-8 区域设置，使多字节字符可被识别。
+     * 若环境不支持，则退化为单字节 C 区域，测试仍可进行。 */
+    if (setlocale(LC_ALL, "C.UTF-8") == NULL &&
+        setlocale(LC_ALL, "en_US.UTF-8") == NULL) {
+        setlocale(LC_ALL, "C");
+    }
+
+    /* [1] 原型检查指针非空（仅用于消除未使用警告） */
+    assert(mbrlen_proto_check == mbrlen);
+
+    /* ---------- [3] 返回值：0..n 区间 ---------- */
+
+    /* 空字符串：遇到 '\0'，返回 0 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        size_t r = mbrlen("", 1, &st);
+        assert(r == 0);                 /* [3] 返回 0 */
+    }
+
+    /* 单字节字符 'A'（在 C 区域下必为单字节） */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        size_t r = mbrlen("A", 1, &st);
+        assert(r == 1);                 /* [3] 返回 1，落在 0..n */
+        assert(r <= 1);
+    }
+
+    /* n == 0：不检查任何字节，返回 0（等价于 mbrtowc 在 n==0 时的行为） */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        size_t r = mbrlen("A", 0, &st);
+        assert(r == 0);                 /* [3] 返回 0 */
+    }
+
+    /* ---------- [3] 返回值：(size_t)(-2) 表示不完整多字节字符 ---------- */
+
+    /* 构造一个需要多于 1 字节的多字节字符序列。
+     * 在 UTF-8 下，0xC3 0xA9 是 'é'（2 字节）。
+     * 只给 1 字节，应返回 (size_t)(-2) 表示不完整。 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        const char *s = "\xC3\xA9";     /* UTF-8 'é' */
+        size_t r = mbrlen(s, 1, &st);
+        if (MB_CUR_MAX > 1) {
+            /* 多字节区域：期望不完整 */
+            assert(r == (size_t)(-2));  /* [3] 返回 (size_t)(-2) */
+        } else {
+            /* 单字节区域：0xC3 是合法单字节字符，返回 1 */
+            assert(r == 1);
+        }
+    }
+
+    /* ---------- [3] 返回值：(size_t)(-1) 表示编码错误 ---------- */
+
+    /* 0xFF 在 UTF-8 中不是合法的起始字节，应返回 (size_t)(-1)。 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        const char *s = "\xFF";
+        size_t r = mbrlen(s, 1, &st);
+        if (MB_CUR_MAX > 1) {
+            assert(r == (size_t)(-1));  /* [3] 返回 (size_t)(-1) */
+        } else {
+            /* 单字节区域下 0xFF 可能合法，跳过 */
+        }
+    }
+
+    /* ---------- [2] ps == NULL 时使用内部静态状态对象 ---------- */
+
+    /* 传 NULL 应可正常调用（使用 mbrlen 内部状态），不崩溃。 */
+    {
+        size_t r = mbrlen("A", 1, NULL);
+        assert(r == 1);                 /* [2] ps==NULL 走 &internal 分支 */
+    }
+
+    /* ---------- [2] ps 表达式只求值一次 ---------- */
+
+    /* 通过包装函数计数：mbrlen 内部对 ps 表达式只应求值一次。 */
+    {
+        mbstate_t st;
+        memset(&st, 0, sizeof st);
+        ps_eval_count = 0;
+        size_t r = mbrlen("A", 1, counting_ps(&st));
+        assert(r == 1);
+        assert(ps_eval_count == 1);     /* [2] 只求值一次 */
+    }
+
+    /* 再次验证：ps == NULL 时，表达式仍只求值一次 */
+    {
+        ps_eval_count = 0;
+        size_t r = mbrlen("A", 1, counting_ps(NULL));
+        assert(r == 1);
+        assert(ps_eval_count == 1);     /* [2] 只求值一次 */
+    }
+
+    /* ---------- [2] 与 mbrtowc(NULL, s, n, ps) 的等价性 ---------- */
+
+    /* 对同一输入，mbrlen 与 mbrtowc(NULL, ...) 应返回相同结果。 */
+    {
+        mbstate_t st1, st2;
+        memset(&st1, 0, sizeof st1);
+        memset(&st2, 0, sizeof st2);
+        const char *s = "A";
+        size_t r1 = mbrlen(s, 1, &st1);
+        size_t r2 = mbrtowc(NULL, s, 1, &st2);
+        assert(r1 == r2);               /* [2] 等价性 */
+    }
+
+    /* 不完整字符情形下的等价性 */
+    {
+        mbstate_t st1, st2;
+        memset(&st1, 0, sizeof st1);
+        memset(&st2, 0, sizeof st2);
+        const char *s = "\xC3\xA9";
+        size_t r1 = mbrlen(s, 1, &st1);
+        size_t r2 = mbrtowc(NULL, s, 1, &st2);
+        assert(r1 == r2);               /* [2] 等价性 */
+    }
+
+    /* 错误字符情形下的等价性 */
+    {
+        mbstate_t st1, st2;
+        memset(&st1, 0, sizeof st1);
+        memset(&st2, 0, sizeof st2);
+        const char *s = "\xFF";
+        size_t r1 = mbrlen(s, 1, &st1);
+        size_t r2 = mbrtowc(NULL, s, 1, &st2);
+        assert(r1 == r2);               /* [2] 等价性 */
+    }
+
+    printf("C99 7.24.6.3.1 mbrlen: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「mbrlen 的第一个参数类型为 const char *」：
+ * 传入 int* 而非 char*，gcc -std=c99 应报 incompatible pointer type 错误。 */
+{
+    int x = 0;
+    mbstate_t st;
+    mbrlen(&x, 1, &st);   /* 期望报错：参数类型不兼容 */
+}
+
+/* 违反约束「mbrlen 的第二个参数类型为 size_t」：
+ * 传入指针而非整数，gcc -std=c99 应报 incompatible type 错误。 */
+{
+    const char *s = "A";
+    mbstate_t st;
+    mbrlen(s, s, &st);    /* 期望报错：size_t 参数收到指针 */
+}
+
+/* 违反约束「mbrlen 的第三个参数类型为 mbstate_t *」：
+ * 传入 int* 而非 mbstate_t*，gcc -std=c99 应报 incompatible pointer type 错误。 */
+{
+    const char *s = "A";
+    int y = 0;
+    mbrlen(s, 1, &y);     /* 期望报错：mbstate_t* 参数收到 int* */
+}
+
+/* 违反约束「mbrlen 返回 size_t，不能作为左值被赋值」：
+ * 函数调用结果不是左值，赋值应报错。 */
+{
+    mbstate_t st;
+    mbrlen("A", 1, &st) = 0;   /* 期望报错：赋值目标不是左值 */
+}
+
+/* 违反约束「mbrlen 需要 3 个实参」：
+ * 实参个数不足，gcc -std=c99 应报 too few arguments 错误。 */
+{
+    mbrlen("A");          /* 期望报错：实参太少 */
+}
+
+/* 违反约束「mbrlen 需要 3 个实参」：
+ * 实参个数过多，gcc -std=c99 应报 too many arguments 错误。 */
+{
+    mbstate_t st;
+    mbrlen("A", 1, &st, 0);   /* 期望报错：实参太多 */
+}
+
+#endif /* 负向测试结束 */

@@ -1,0 +1,214 @@
+/*
+ * 测试条款：C99 7.24.4.5.6  The wcsstr function
+ *
+ * 预期行为：
+ *   正向测试：包含 <wchar.h>，调用 wcsstr 定位宽字符串子串，
+ *             验证返回值语义（找到返回指向首次出现的指针、未找到返回 NULL、
+ *             s2 为空宽字符串时返回 s1），程序应能编译并运行通过。
+ *   负向测试：违反约束的代码片段（放在 #if 0 中）应导致编译报错。
+ *
+ * 覆盖段落：[1] 原型/头文件、[2] 描述（首次出现、不含终止空宽字符）、
+ *           [3] 返回值（找到/未找到/空串）。
+ */
+
+#include <stdio.h>
+#include <wchar.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 头文件 <wchar.h> 提供 wcsstr 声明，原型为：
+ *     wchar_t *wcsstr(const wchar_t *s1, const wchar_t *s2);
+ *     下面通过函数指针类型检查原型签名是否匹配。 */
+static wchar_t *(*fp_wcsstr)(const wchar_t *, const wchar_t *) = wcsstr;
+
+int main(void)
+{
+    /* [1] 原型可用性：函数指针赋值成功即说明声明存在且签名匹配。 */
+    assert(fp_wcsstr != NULL);
+
+    /* [2] 基本定位：在 s1 中定位 s2 的首次出现。 */
+    {
+        const wchar_t *s1 = L"hello world, hello C99";
+        const wchar_t *s2 = L"hello";
+        wchar_t *p = wcsstr(s1, s2);
+        /* 返回指向首次出现的指针，即 s1 的起始位置。 */
+        assert(p == s1);
+        assert(wcscmp(p, L"hello world, hello C99") == 0);
+    }
+
+    /* [2] 首次出现：s2 在 s1 中间出现多次，应返回第一次出现的位置。 */
+    {
+        const wchar_t *s1 = L"abcXYZabcXYZabc";
+        const wchar_t *s2 = L"abc";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == s1);                 /* 第一次出现在开头 */
+        assert(p == &s1[0]);
+
+        /* 从第一次出现之后继续查找，应得到第二次出现的位置。 */
+        wchar_t *p2 = wcsstr(p + 1, s2);
+        assert(p2 == &s1[6]);            /* "abcXYZ" 之后 */
+        assert(wcscmp(p2, L"abcXYZabc") == 0);
+    }
+
+    /* [2] 子串出现在中间（非开头）。 */
+    {
+        const wchar_t *s1 = L"prefix-MIDDLE-suffix";
+        const wchar_t *s2 = L"MIDDLE";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == &s1[7]);
+        assert(wcscmp(p, L"MIDDLE-suffix") == 0);
+    }
+
+    /* [2] 子串出现在末尾。 */
+    {
+        const wchar_t *s1 = L"abcdef";
+        const wchar_t *s2 = L"def";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == &s1[3]);
+        assert(wcscmp(p, L"def") == 0);
+    }
+
+    /* [2] 单宽字符子串。 */
+    {
+        const wchar_t *s1 = L"wchar_t test";
+        const wchar_t *s2 = L"t";
+        wchar_t *p = wcsstr(s1, s2);
+        /* "wchar_t test" 中第一个 't' 出现在索引 5（"wchar_" 之后）。 */
+        assert(p == &s1[5]);
+        assert(*p == L't');
+    }
+
+    /* [3] 未找到：返回空指针。 */
+    {
+        const wchar_t *s1 = L"hello world";
+        const wchar_t *s2 = L"xyz";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == NULL);
+    }
+
+    /* [3] 未找到（s2 比 s1 长）。 */
+    {
+        const wchar_t *s1 = L"ab";
+        const wchar_t *s2 = L"abcdef";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == NULL);
+    }
+
+    /* [3] s2 为空宽字符串（零长度）：返回 s1。 */
+    {
+        const wchar_t *s1 = L"anything";
+        const wchar_t *s2 = L"";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == s1);
+    }
+
+    /* [3] s1 为空宽字符串、s2 也为空：返回 s1。 */
+    {
+        const wchar_t *s1 = L"";
+        const wchar_t *s2 = L"";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == s1);
+    }
+
+    /* [3] s1 为空宽字符串、s2 非空：返回 NULL。 */
+    {
+        const wchar_t *s1 = L"";
+        const wchar_t *s2 = L"a";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == NULL);
+    }
+
+    /* [2] 子串匹配不跨越 s1 的终止空宽字符：
+     *     s1 = "ab"，s2 = "b\0c" 形式不可能，因为 s2 以空宽字符终止；
+     *     这里验证 s2 的终止空宽字符不参与匹配。 */
+    {
+        const wchar_t *s1 = L"abc";
+        const wchar_t *s2 = L"c";   /* s2 内容为 'c' + L'\0' */
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == &s1[2]);
+        assert(*p == L'c');
+        assert(p[1] == L'\0');      /* 返回指针指向 s1 内部，其后为终止符 */
+    }
+
+    /* [2] 返回的指针可写（s1 非 const 时），且指向 s1 内部。 */
+    {
+        wchar_t s1[] = L"find me here";
+        const wchar_t *s2 = L"me";
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == &s1[5]);
+        /* 返回指针确实指向 s1 内部，可修改。 */
+        p[0] = L'M';
+        p[1] = L'E';
+        assert(wcscmp(s1, L"find ME here") == 0);
+    }
+
+    /* [2] 宽字符（非 ASCII）子串定位。 */
+    {
+        const wchar_t *s1 = L"\u4f60\u597d\u4e16\u754c";  /* 你好世界 */
+        const wchar_t *s2 = L"\u4e16\u754c";              /* 世界 */
+        wchar_t *p = wcsstr(s1, s2);
+        assert(p == &s1[2]);
+        assert(wcscmp(p, L"\u4e16\u754c") == 0);
+    }
+
+    printf("C99 7.24.4.5.6 wcsstr: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「wcsstr 的第一个参数类型为 const wchar_t *」：
+ * 传入 int * 与 wchar_t * 不兼容，gcc -std=c99 应报错
+ * （incompatible pointer type / passing argument 1 makes pointer from integer）。 */
+#include <wchar.h>
+void bad_arg_type(void)
+{
+    int a[4] = {0};
+    wchar_t b[4] = L"ab";
+    wchar_t *p = wcsstr(a, b);   /* 错误：第一个实参不是 const wchar_t * */
+    (void)p;
+}
+
+/* 违反约束「wcsstr 的第二个参数类型为 const wchar_t *」：
+ * 传入 char * 与 wchar_t * 不兼容，应报错。 */
+void bad_arg_type2(void)
+{
+    wchar_t a[4] = L"ab";
+    char b[4] = "ab";
+    wchar_t *p = wcsstr(a, b);   /* 错误：第二个实参不是 const wchar_t * */
+    (void)p;
+}
+
+/* 违反约束「wcsstr 需要两个参数」：
+ * 参数个数不匹配，应报错（too few arguments to function 'wcsstr'）。 */
+void bad_arg_count(void)
+{
+    wchar_t a[4] = L"ab";
+    wchar_t *p = wcsstr(a);      /* 错误：缺少第二个实参 */
+    (void)p;
+}
+
+/* 违反约束「wcsstr 返回 wchar_t *」：
+ * 将返回值赋给不兼容的指针类型（如 int *）应报错。 */
+void bad_return_use(void)
+{
+    wchar_t a[4] = L"ab";
+    wchar_t b[4] = L"a";
+    int *p = wcsstr(a, b);       /* 错误：wchar_t * 赋给 int * 不兼容 */
+    (void)p;
+}
+
+/* 违反约束「wcsstr 的实参必须是指针类型」：
+ * 传入整数常量，应报错（passing argument makes pointer from integer）。 */
+void bad_arg_not_pointer(void)
+{
+    wchar_t *p = wcsstr(0, 0);   /* 错误：0 作为指针常量虽可空指针，
+                                  * 但此处两个实参均为 int 常量，
+                                  * 与 const wchar_t * 不兼容，应报错。 */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

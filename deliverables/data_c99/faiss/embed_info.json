@@ -1,0 +1,8 @@
+{
+  "backend": "sentence-transformers",
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "dim": 384,
+  "count": 581,
+  "source_chunks": "D:\\C99_check_system\\legal_qa_system\\qa_system\\data_c99\\chunks.jsonl",
+  "source_laws": null
+}

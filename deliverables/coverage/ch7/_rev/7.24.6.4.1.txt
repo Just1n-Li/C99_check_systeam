@@ -1,0 +1,296 @@
+=== TEXT ===
+The mbsrtowcs function
+Synopsis:
+[1] #include <wchar.h> size_t mbsrtowcs(wchar_t * restrict dst, const char ** restrict src, size_t len, mbstate_t * restrict ps);
+Description:
+[2] The mbsrtowcs function converts a sequence of multibyte characters that begins in the conversion state described by the object pointed to by ps, from the array indirectly pointed to by src into a sequence of corresponding wide characters. If dst is not a null pointer, the converted characters are stored into the array pointed to by dst. Conversion continues up to and including a terminating null character, which is also stored. Conversion stops earlier in two cases: when a sequence of bytes is encountered that does not form a valid multibyte character, or (if dst is not a null pointer) when len wide characters have been stored into the array pointed to by dst. Each conversion takes place as if by a call to the mbrtowc function.
+[3] If dst is not a null pointer, the pointer object pointed to by src is assigned either a null pointer (if conversion stopped due to reaching a terminating null character) or the address just past the last multibyte character converted (if any). If conversion stopped due to reaching a terminating null character and if dst is not a null pointer, the resulting state described is the initial conversion state.
+Returns:
+[4] If the input conversion encounters a sequence of bytes that do not form a valid multibyte character, an encoding error occurs: the mbsrtowcs function stores the value of the macro EILSEQ in errno and returns (size_t)(-1); the conversion state is unspecified. Otherwise, it returns the number of multibyte characters successfully converted, not including the terminating null character (if any).
+Footnotes:
+301) Thus, the value of len is ignored if dst is a null pointer.
+
+=== CODE ===
+/*
+ * 测试 C99 7.24.6.4.1 —— mbsrtowcs 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（在 C locale 下，多字节字符即单字节字符）。
+ *   负向测试：违反约束的代码应导致编译报错（统一放在 #if 0 中，不影响本文件编译）。
+ *
+ * 覆盖段落：
+ *   [1] 函数原型 / 头文件 <wchar.h>
+ *   [2] 转换语义：从 *src 转换到 dst，最多 len 个宽字符，含终止空字符；
+ *       dst 为 NULL 时忽略 len；遇到非法多字节序列或已存满 len 个宽字符时提前停止；
+ *       每次转换等价于调用 mbrtowc。
+ *   [3] 更新 *src：到达终止空字符则置为 NULL，否则指向最后一个已转换多字节字符之后；
+ *       到达终止空字符且 dst 非 NULL 时，结果状态为初始转换状态。
+ *   [4] 返回值：非法序列时置 errno=EILSEQ 并返回 (size_t)(-1)；
+ *       否则返回成功转换的多字节字符数（不含终止空字符）。
+ *   Footnote 301：dst 为 NULL 时 len 被忽略。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+#include <errno.h>
+#include <assert.h>
+#include <locale.h>
+
+int main(void)
+{
+    /* 使用 C locale，多字节字符 == 单字节字符，行为可预测 */
+    setlocale(LC_ALL, "C");
+
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 原型可用性：正确声明并调用 */
+    {
+        wchar_t dst[32];
+        const char *src = "abc";
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        n = mbsrtowcs(dst, &src, sizeof dst / sizeof dst[0], &st);
+        /* [4] 返回成功转换的多字节字符数，不含终止空字符 */
+        assert(n == 3);
+        /* [2] 终止空字符也被存储 */
+        assert(dst[0] == L'a' && dst[1] == L'b' && dst[2] == L'c' && dst[3] == L'\0');
+        /* [3] 到达终止空字符：*src 被置为 NULL */
+        assert(src == NULL);
+        /* [3] 到达终止空字符且 dst 非 NULL：结果状态为初始转换状态 */
+        {
+            mbstate_t init;
+            memset(&init, 0, sizeof init);
+            assert(memcmp(&st, &init, sizeof st) == 0);
+        }
+    }
+
+    /* [2] 转换在遇到终止空字符时停止，并包含终止空字符 */
+    {
+        wchar_t dst[8];
+        const char *src = "hi";
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        n = mbsrtowcs(dst, &src, 8, &st);
+        assert(n == 2);
+        assert(dst[0] == L'h' && dst[1] == L'i' && dst[2] == L'\0');
+        assert(src == NULL);
+    }
+
+    /* [2] 当 dst 非 NULL 且已存满 len 个宽字符时提前停止；
+     *     此时未到达终止空字符，*src 指向最后一个已转换字符之后 */
+    {
+        wchar_t dst[3];
+        const char *src = "abcdef";
+        const char *orig = src;
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        n = mbsrtowcs(dst, &src, 3, &st);
+        /* 存满 3 个宽字符后停止，未包含终止空字符 */
+        assert(n == 3);
+        assert(dst[0] == L'a' && dst[1] == L'b' && dst[2] == L'c');
+        /* [3] *src 指向最后一个已转换多字节字符之后 */
+        assert(src == orig + 3);
+        assert(*src == 'd');
+    }
+
+    /* [2] + Footnote 301：dst 为 NULL 时，len 被忽略，仅计算所需长度 */
+    {
+        const char *src = "hello";
+        const char *orig = src;
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        /* 即使 len 为 0，dst 为 NULL 时也应完整扫描 */
+        n = mbsrtowcs(NULL, &src, 0, &st);
+        assert(n == 5);
+        /* [3] 到达终止空字符：*src 被置为 NULL（dst 为 NULL 时也更新 *src） */
+        assert(src == NULL);
+        (void)orig;
+    }
+
+    /* [2] 空字符串：转换立即遇到终止空字符 */
+    {
+        wchar_t dst[4];
+        const char *src = "";
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        n = mbsrtowcs(dst, &src, 4, &st);
+        assert(n == 0);
+        assert(dst[0] == L'\0');
+        assert(src == NULL);
+    }
+
+    /* [2] 每次转换等价于调用 mbrtowc：逐字符结果应与 mbrtowc 一致 */
+    {
+        wchar_t dst[8];
+        const char *src = "xyz";
+        mbstate_t st1, st2;
+        size_t n;
+        wchar_t wc;
+        size_t k;
+
+        memset(&st1, 0, sizeof st1);
+        n = mbsrtowcs(dst, &src, 8, &st1);
+        assert(n == 3);
+
+        /* 用 mbrtowc 独立验证 */
+        memset(&st2, 0, sizeof st2);
+        {
+            const char *p = "xyz";
+            k = mbrtowc(&wc, p, 1, &st2);
+            assert(k == 1 && wc == L'x');
+            p += 1;
+            k = mbrtowc(&wc, p, 1, &st2);
+            assert(k == 1 && wc == L'y');
+            p += 1;
+            k = mbrtowc(&wc, p, 1, &st2);
+            assert(k == 1 && wc == L'z');
+        }
+        assert(dst[0] == L'x' && dst[1] == L'y' && dst[2] == L'z');
+    }
+
+    /* [4] 非法多字节序列：置 errno=EILSEQ，返回 (size_t)(-1) */
+    {
+        wchar_t dst[8];
+        /* 0xFF 在 C locale 下不是合法的多字节字符 */
+        const char bad[] = { (char)0xFF, '\0' };
+        const char *src = bad;
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        errno = 0;
+        n = mbsrtowcs(dst, &src, 8, &st);
+        assert(n == (size_t)(-1));
+        assert(errno == EILSEQ);
+    }
+
+    /* [4] 非法序列出现在中间：已转换部分保留，返回 (size_t)(-1) */
+    {
+        wchar_t dst[8];
+        const char bad[] = { 'a', 'b', (char)0xFF, '\0' };
+        const char *src = bad;
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        errno = 0;
+        n = mbsrtowcs(dst, &src, 8, &st);
+        assert(n == (size_t)(-1));
+        assert(errno == EILSEQ);
+        /* 已成功转换的 'a','b' 应已写入 dst */
+        assert(dst[0] == L'a' && dst[1] == L'b');
+    }
+
+    /* [4] 非法序列 + dst 为 NULL：同样返回 (size_t)(-1) 并置 errno */
+    {
+        const char bad[] = { (char)0xFE, '\0' };
+        const char *src = bad;
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        errno = 0;
+        n = mbsrtowcs(NULL, &src, 0, &st);
+        assert(n == (size_t)(-1));
+        assert(errno == EILSEQ);
+    }
+
+    /* [3] 未到达终止空字符时，*src 指向最后一个已转换字符之后（dst 为 NULL 情形） */
+    {
+        const char *src = "abcdef";
+        const char *orig = src;
+        mbstate_t st;
+        size_t n;
+
+        memset(&st, 0, sizeof st);
+        /* dst 为 NULL 时 len 被忽略，会一直转换到终止空字符 */
+        n = mbsrtowcs(NULL, &src, 0, &st);
+        assert(n == 6);
+        assert(src == NULL);
+        (void)orig;
+    }
+
+    printf("All positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+    /* 违反约束「mbsrtowcs 的第一个参数类型为 wchar_t * restrict」：
+     * 传入 int* 而非 wchar_t*，gcc -std=c99 应报 incompatible pointer type 错误。 */
+    {
+        int dst[8];
+        const char *src = "abc";
+        mbstate_t st;
+        mbsrtowcs(dst, &src, 8, &st);
+    }
+
+    /* 违反约束「mbsrtowcs 的第二个参数类型为 const char ** restrict」：
+     * 传入 char** 而非 const char**，gcc -std=c99 应报 incompatible pointer type 错误。 */
+    {
+        wchar_t dst[8];
+        char *src = "abc";
+        mbstate_t st;
+        mbsrtowcs(dst, &src, 8, &st);
+    }
+
+    /* 违反约束「mbsrtowcs 的第三个参数类型为 size_t」：
+     * 传入指针类型，gcc -std=c99 应报 incompatible type 错误。 */
+    {
+        wchar_t dst[8];
+        const char *src = "abc";
+        mbstate_t st;
+        mbsrtowcs(dst, &src, "8", &st);
+    }
+
+    /* 违反约束「mbsrtowcs 的第四个参数类型为 mbstate_t * restrict」：
+     * 传入 int* 而非 mbstate_t*，gcc -std=c99 应报 incompatible pointer type 错误。 */
+    {
+        wchar_t dst[8];
+        const char *src = "abc";
+        int st;
+        mbsrtowcs(dst, &src, 8, &st);
+    }
+
+    /* 违反约束「mbsrtowcs 返回 size_t」：
+     * 将返回值赋给结构体类型，gcc -std=c99 应报 incompatible type 错误。 */
+    {
+        struct S { int x; } s;
+        wchar_t dst[8];
+        const char *src = "abc";
+        mbstate_t st;
+        s = mbsrtowcs(dst, &src, 8, &st);
+    }
+
+    /* 违反约束「mbsrtowcs 参数个数必须为 4」：
+     * 少传参数，gcc -std=c99 应报 too few arguments 错误。 */
+    {
+        wchar_t dst[8];
+        const char *src = "abc";
+        mbsrtowcs(dst, &src);
+    }
+
+    /* 违反约束「mbsrtowcs 参数个数必须为 4」：
+     * 多传参数，gcc -std=c99 应报 too many arguments 错误。 */
+    {
+        wchar_t dst[8];
+        const char *src = "abc";
+        mbstate_t st;
+        mbsrtowcs(dst, &src, 8, &st, 0);
+    }
+
+#endif
+
+    return 0;
+}

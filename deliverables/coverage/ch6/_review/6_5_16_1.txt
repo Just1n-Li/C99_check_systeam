@@ -1,0 +1,199 @@
+=== ARTICLE ===
+6.5.16.1
+=== TEXT ===
+Simple assignment
+Constraints:
+[1] One of the following shall hold: the left operand has qualified or unqualified arithmetic type and the right has arithmetic type; the left operand has a qualified or unqualified version of a structure or union type compatible with the type of the right; both operands are pointers to qualified or unqualified versions of compatible types, and the type pointed to by the left has all the qualifiers of the type pointed to by the right; one operand is a pointer to an object or incomplete type and the other is a pointer to a qualified or unqualified version of void, and the type pointed to by the left has all the qualifiers of the type pointed to by the right; the left operand is a pointer and the right is a null pointer constant; or the left operand has type _Bool and the right is a pointer.
+Semantics:
+[2] In simple assignment (=), the value of the right operand is converted to the type of the assignment expression and replaces the value stored in the object designated by the left operand.
+[3] If the value being stored in an object is read from another object that overlaps in any way the storage of the first object, then the overlap shall be exact and the two objects shall have qualified or unqualified versions of a compatible type; otherwise, the behavior is undefined.
+[4] EXAMPLE 1 In the program fragment int f(void); char c; /* ... */ if ((c = f()) == -1) /* ... */ the int value returned by the function may be truncated when stored in the char, and then converted back to int width prior to the comparison. In an implementation in which ''plain'' char has the same range of values as unsigned char (and char is narrower than int), the result of the conversion cannot be negative, so the operands of the comparison can never compare equal. Therefore, for full portability, the variable c should be declared as int.
+[5] EXAMPLE 2 In the fragment: char c; int i; long l; l = (c = i); the value of i is converted to the type of the assignment expression c = i, that is, char type. The value of the expression enclosed in parentheses is then converted to the type of the outer assignment expression, that is, long int type.
+[6] EXAMPLE 3 Consider the fragment: const char **cpp; char *p; const char c = 'A'; cpp = &p; // constraint violation *cpp = &c; // valid *p = 0; // valid The first assignment is unsafe because it would allow the following valid code to attempt to change the value of the const object c.
+Footnotes:
+96) The asymmetric appearance of these constraints with respect to type qualifiers is due to the conversion (specified in 6.3.2.1) that changes lvalues to ''the value of the expression'' and thus removes any type qualifiers that were applied to the type category of the expression (for example, it removes const but not volatile from the type int volatile * const).
+=== CODE ===
+/*
+ * 验证 C99 6.5.16.1 Simple assignment
+ * 预期行为：正向测试编译并运行通过，负向测试编译报错。
+ */
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 左操作数算术类型，右操作数算术类型（含 volatile 限定） */
+static void test_arithmetic(void) {
+    int i = 0;
+    double d = 0.0;
+    i = 5;
+    d = 3.14;
+    assert(i == 5);
+    assert(d == 3.14);
+
+    volatile int vi = 10;
+    vi = 20; /* volatile 限定的算术类型左操作数 */
+    assert(vi == 20);
+}
+
+/* [1] 左操作数结构体/联合类型，与右操作数类型兼容 */
+struct S { int a; double b; };
+union U { int i; float f; };
+
+static void test_struct_union(void) {
+    struct S s1 = {1, 2.0}, s2;
+    s2 = s1;
+    assert(s2.a == 1 && s2.b == 2.0);
+
+    union U u1, u2;
+    u1.i = 42;
+    u2 = u1;
+    assert(u2.i == 42);
+}
+
+/* [1] 两操作数均为指针，指向兼容类型，左操作数包含右操作数的所有限定符 */
+static void test_pointer_qualified(void) {
+    int x = 10;
+    int *p = &x;
+    const int *cp = p;          /* 左指向 const int，包含右指向 int 的所有限定符 */
+    assert(cp != NULL);
+
+    volatile int *vp = (volatile int *)&x;
+    const volatile int *cvp = vp; /* 左包含 const+volatile */
+    assert(cvp != NULL);
+}
+
+/* [1] 一方为对象指针，另一方为 void 指针，左操作数包含右操作数的所有限定符 */
+static void test_void_pointer(void) {
+    int x = 5;
+    int *p = &x;
+    void *vp = p;               /* 对象指针 → void * */
+    assert(vp == p);
+
+    const int *cp = &x;
+    const void *cvp = cp;       /* const int * → const void * */
+    assert(cvp == cp);
+}
+
+/* [1] 左操作数为指针，右操作数为空指针常量 */
+static void test_null_pointer(void) {
+    int *p = NULL;
+    p = 0;
+    assert(p == NULL);
+}
+
+/* [1] 左操作数为 _Bool，右操作数为指针 */
+static void test_bool_pointer(void) {
+    int x = 1;
+    int *p = &x;
+    _Bool b = p;
+    assert(b == 1);
+    b = NULL;
+    assert(b == 0);
+}
+
+/* [2] 语义：右操作数值转换为赋值表达式类型（即左操作数类型）并替换左值 */
+static void test_semantics_conversion(void) {
+    int i;
+    double d = 3.99;
+    i = d;                      /* double → int，截断 */
+    assert(i == 3);
+}
+
+/* [3] 重叠对象赋值：精确重叠且类型兼容，行为定义 */
+static void test_overlap_exact(void) {
+    union {
+        int x;
+        int y;
+    } u;
+    u.x = 42;
+    u.y = u.x;                  /* 精确重叠，兼容类型 */
+    assert(u.y == 42);
+}
+
+/* [4] EXAMPLE 1：int 截断为 char 再转回 int 比较 */
+static int f(void) { return -1; }
+
+static void test_example_1(void) {
+    char c;
+    /* 结果取决于实现中 char 是否为 unsigned；此处仅验证可编译运行 */
+    if ((c = f()) == -1)
+        printf("EXAMPLE 1: (c = f()) == -1 is true\n");
+    else
+        printf("EXAMPLE 1: (c = f()) == -1 is false\n");
+}
+
+/* [5] EXAMPLE 2：嵌套赋值中的逐级类型转换 */
+static void test_example_2(void) {
+    char c;
+    int i = 65;                 /* 'A' */
+    long l;
+    l = (c = i);                /* i→char 赋给 c，表达式值 char→long 赋给 l */
+    assert(c == 'A');
+    assert(l == (long)'A');
+}
+
+int main(void) {
+    test_arithmetic();
+    test_struct_union();
+    test_pointer_qualified();
+    test_void_pointer();
+    test_null_pointer();
+    test_bool_pointer();
+    test_semantics_conversion();
+    test_overlap_exact();
+    test_example_1();
+    test_example_2();
+    printf("All positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* [1] 违反约束：左操作数算术类型，右操作数指针类型不匹配 */
+void neg_arithmetic_pointer(void) {
+    int i;
+    int *p;
+    i = p;  /* 期望报错：赋值类型不兼容，算术类型不能接收指针 */
+}
+
+/* [1] 违反约束：左右结构体类型不兼容 */
+void neg_struct_incompatible(void) {
+    struct A { int x; } a;
+    struct B { int x; } b;
+    a = b;  /* 期望报错：结构体类型不兼容 */
+}
+
+/* [1] 违反约束：左操作数指针缺少右操作数指向类型的 const 限定符 */
+void neg_pointer_missing_qualifier(void) {
+    const int x = 5;
+    const int *cp = &x;
+    int *p = cp;  /* 期望报错：int* 不包含 const int* 的 const 限定符 */
+}
+
+/* [1] 违反约束：指向不兼容类型的指针赋值 */
+void neg_pointer_incompatible(void) {
+    int x = 5;
+    int *p = &x;
+    double *dp = p;  /* 期望报错：int* 与 double* 指向类型不兼容 */
+}
+
+/* [1] 违反约束：void 指针赋值时左操作数缺少右操作数的限定符 */
+void neg_void_pointer_missing_qualifier(void) {
+    const int x = 5;
+    const int *cp = &x;
+    void *vp = cp;  /* 期望报错：void* 不包含 const int* 的 const 限定符 */
+}
+
+/* [6] EXAMPLE 3：违反约束——const char** 与 char** 不兼容 */
+void neg_example_3(void) {
+    const char **cpp;
+    char *p;
+    const char c = 'A';
+    cpp = &p;  /* 期望报错：const char** 与 char** 不兼容，左指向类型未包含右指向类型的限定符 */
+    *cpp = &c;
+    *p = 0;
+}
+
+#endif

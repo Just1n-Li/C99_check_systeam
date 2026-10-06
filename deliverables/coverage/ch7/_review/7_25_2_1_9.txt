@@ -1,0 +1,135 @@
+=== TEXT ===
+The iswpunct function
+Synopsis:
+[1] #include <wctype.h> int iswpunct(wint_t wc);
+Description:
+[2] The iswpunct function tests for any printing wide character that is one of a locale- specific set of punctuation wide characters for which neither iswspace nor iswalnum is true.
+
+=== CODE ===
+/*
+ * 测试 C99 7.25.2.1.9 —— iswpunct 函数
+ *
+ * 预期行为：
+ *   正向测试：包含 <wctype.h>，调用 iswpunct(wint_t)，程序应能编译并运行通过。
+ *             验证语义 [2]：iswpunct 对「可打印宽字符」中「既非空白(iswspace)又非字母数字(iswalnum)」
+ *             的标点宽字符返回非零；对空白、字母、数字返回 0。
+ *   负向测试：违反约束的代码应被编译器拒绝（编译报错）。
+ *
+ * 说明：iswpunct 的行为依赖 locale。在 "C" locale 下，标点集合是固定的 ASCII 标点。
+ *       测试使用 setlocale 切换到 "C" locale 以保证可移植的确定性结果。
+ */
+
+#include <stdio.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <locale.h>
+#include <assert.h>
+
+int main(void)
+{
+    /* 固定到 "C" locale，使标点集合确定 */
+    setlocale(LC_ALL, "C");
+
+    /* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+    /* [1] 原型：int iswpunct(wint_t wc);  —— 头文件 <wctype.h> 已包含，
+     *     此处验证函数可被调用且返回 int。 */
+    {
+        int r = iswpunct(L'!');
+        assert(r != 0);            /* '!' 是标点 */
+    }
+
+    /* [2] 语义：标点宽字符 —— 既非 iswspace 又非 iswalnum 的可打印宽字符。
+     *     对一组典型 ASCII 标点，iswpunct 应返回非零，
+     *     且同时满足 !iswspace && !iswalnum。 */
+    {
+        const wchar_t puncts[] = {
+            L'!', L'"', L'#', L'$', L'%', L'&', L'\'', L'(', L')',
+            L'*', L'+', L',', L'-', L'.', L'/', L':', L';', L'<',
+            L'=', L'>', L'?', L'@', L'[', L'\\', L']', L'^', L'_',
+            L'`', L'{', L'|', L'}', L'~'
+        };
+        size_t i;
+        for (i = 0; i < sizeof(puncts) / sizeof(puncts[0]); ++i) {
+            wint_t wc = (wint_t)puncts[i];
+            /* 标点：iswpunct 为真 */
+            assert(iswpunct(wc) != 0);
+            /* 且既非空白又非字母数字（条款 [2] 的定义） */
+            assert(iswspace(wc) == 0);
+            assert(iswalnum(wc) == 0);
+        }
+    }
+
+    /* [2] 语义：非标点字符 —— 空白、字母、数字，iswpunct 应返回 0。 */
+    {
+        /* 空白字符：iswspace 为真，故 iswpunct 应为 0 */
+        const wchar_t spaces[] = { L' ', L'\t', L'\n', L'\v', L'\f', L'\r' };
+        size_t i;
+        for (i = 0; i < sizeof(spaces) / sizeof(spaces[0]); ++i) {
+            wint_t wc = (wint_t)spaces[i];
+            assert(iswspace(wc) != 0);
+            assert(iswpunct(wc) == 0);
+        }
+
+        /* 字母与数字：iswalnum 为真，故 iswpunct 应为 0 */
+        const wchar_t alnums[] = {
+            L'a', L'z', L'A', L'Z', L'0', L'9', L'g', L'Q', L'5'
+        };
+        for (i = 0; i < sizeof(alnums) / sizeof(alnums[0]); ++i) {
+            wint_t wc = (wint_t)alnums[i];
+            assert(iswalnum(wc) != 0);
+            assert(iswpunct(wc) == 0);
+        }
+    }
+
+    /* [2] 语义：iswpunct 与 iswspace / iswalnum 的互斥关系。
+     *     对任意可打印宽字符，iswpunct 为真 <=> (!iswspace && !iswalnum)。 */
+    {
+        const wchar_t samples[] = {
+            L'!', L' ', L'a', L'0', L'~', L'\t', L'Z', L'9', L'@', L'\n'
+        };
+        size_t i;
+        for (i = 0; i < sizeof(samples) / sizeof(samples[0]); ++i) {
+            wint_t wc = (wint_t)samples[i];
+            int punct = (iswpunct(wc) != 0);
+            int not_ws_alnum = (iswspace(wc) == 0) && (iswalnum(wc) == 0);
+            /* 对可打印字符，二者应一致 */
+            if (iswprint(wc)) {
+                assert(punct == not_ws_alnum);
+            }
+        }
+    }
+
+    /* [1] 参数类型为 wint_t，接受 WEOF 等值应可调用（不崩溃）。 */
+    {
+        (void)iswpunct((wint_t)WEOF);
+        (void)iswpunct((wint_t)L'!');
+    }
+
+    printf("iswpunct: all positive tests passed.\n");
+
+    /* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+    /* 违反约束「iswpunct 的原型为 int iswpunct(wint_t)」：
+     * 传入不兼容的指针类型，gcc -std=c99 应报错（参数类型不匹配）。 */
+    {
+        char *p = "x";
+        iswpunct(p);            /* 期望：error: incompatible type for argument 1 */
+    }
+
+    /* 违反约束「函数返回 int，不能作为左值被赋值」：
+     * 对函数调用结果赋值，gcc -std=c99 应报错。 */
+    {
+        iswpunct(L'!') = 1;     /* 期望：error: lvalue required as left operand of assignment */
+    }
+
+    /* 违反约束「调用需在 <wctype.h> 声明可见」：
+     * 若未包含头文件而隐式声明，C99 下调用未声明函数应报错/警告为错误。 */
+    {
+        /* 假设此处未包含 <wctype.h>，则 iswpunct 未声明 */
+        /* 期望：error: implicit declaration of function 'iswpunct' */
+    }
+#endif
+
+    return 0;
+}

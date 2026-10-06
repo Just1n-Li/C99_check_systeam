@@ -1,0 +1,169 @@
+=== ARTICLE 7.23.3.4 ===
+--- TEXT ---
+The localtime function
+Synopsis:
+[1] #include <time.h> struct tm *localtime(const time_t *timer);
+Description:
+[2] The localtime function converts the calendar time pointed to by timer into a broken-down time, expressed as local time.
+Returns:
+[3] The localtime function returns a pointer to the broken-down time, or a null pointer if the specified time cannot be converted to local time.
+--- CODE ---
+/*
+ * 测试条款：C99 7.23.3.4  localtime 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明 struct tm *localtime(const time_t *timer);
+ *   [2] 把 timer 指向的日历时间转换为本地时间的分解时间
+ *   [3] 返回指向分解时间的指针；无法转换时返回空指针
+ */
+
+#include <stdio.h>
+#include <time.h>
+#include <assert.h>
+#include <stddef.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：函数指针类型必须与标准原型完全一致。
+ *     若 localtime 的声明与标准不符，此处赋值会触发编译警告/错误。 */
+static struct tm *(*const localtime_proto_check)(const time_t *) = localtime;
+
+int main(void)
+{
+    /* [1] 头文件 <time.h> 必须提供 localtime 的声明，且返回 struct tm *。 */
+    {
+        struct tm *p = localtime(NULL); /* 仅用于类型检查，不依赖其返回值 */
+        (void)p;
+        assert(localtime_proto_check == localtime);
+    }
+
+    /* [2][3] 正常转换：取一个已知日历时间，转换为本地分解时间。
+     *        使用 time() 获取当前时间，再调用 localtime。 */
+    {
+        time_t now = time(NULL);
+        assert(now != (time_t)-1);
+
+        struct tm *lt = localtime(&now);
+        /* [3] 对合法时间，应返回非空指针。 */
+        assert(lt != NULL);
+
+        /* [2] 返回的分解时间各字段应处于合理范围（本地时间语义）。 */
+        assert(lt->tm_sec  >= 0 && lt->tm_sec  <= 60);   /* 允许闰秒 60 */
+        assert(lt->tm_min  >= 0 && lt->tm_min  <= 59);
+        assert(lt->tm_hour >= 0 && lt->tm_hour <= 23);
+        assert(lt->tm_mday >= 1 && lt->tm_mday <= 31);
+        assert(lt->tm_mon  >= 0 && lt->tm_mon  <= 11);   /* 0..11 */
+        assert(lt->tm_wday >= 0 && lt->tm_wday <= 6);
+        assert(lt->tm_yday >= 0 && lt->tm_yday <= 365);
+
+        /* [2] 一致性：localtime 与 mktime 应能往返（同一本地时区）。
+         *     注意 mktime 会规范化字段，这里只做基本往返检查。 */
+        struct tm copy = *lt;
+        time_t back = mktime(&copy);
+        assert(back != (time_t)-1);
+        /* 允许因夏令时/闰秒等造成的少量偏差，这里要求相等。 */
+        assert(back == now);
+    }
+
+    /* [2][3] 使用一个固定的日历时间（1970-01-01 00:00:00 UTC 附近），
+     *        验证返回结构体字段被正确填充。 */
+    {
+        time_t t = (time_t)0; /* epoch */
+        struct tm *lt = localtime(&t);
+        assert(lt != NULL);
+        /* 本地时间取决于时区，但字段范围必须合法。 */
+        assert(lt->tm_sec  >= 0 && lt->tm_sec  <= 60);
+        assert(lt->tm_min  >= 0 && lt->tm_min  <= 59);
+        assert(lt->tm_hour >= 0 && lt->tm_hour <= 23);
+        assert(lt->tm_mon  >= 0 && lt->tm_mon  <= 11);
+    }
+
+    /* [3] 无法转换的情形：传入一个超出可表示范围的极端时间值。
+     *     标准允许此时返回空指针。这里只验证「要么返回非空且字段合法，
+     *     要么返回空指针」，不强制某一种结果（实现相关）。 */
+    {
+        time_t huge = (time_t)-1; /* 常见实现中表示无效时间 */
+        struct tm *lt = localtime(&huge);
+        if (lt != NULL) {
+            assert(lt->tm_sec  >= 0 && lt->tm_sec  <= 60);
+            assert(lt->tm_min  >= 0 && lt->tm_min  <= 59);
+            assert(lt->tm_hour >= 0 && lt->tm_hour <= 23);
+        }
+        /* 若返回 NULL，也符合 [3] 的规定。 */
+    }
+
+    /* [2] 参数为指向 time_t 的指针，验证可以传入非常量对象的地址。 */
+    {
+        time_t t = time(NULL);
+        const time_t *cp = &t;      /* 指向 const 的指针也可传入 */
+        struct tm *lt = localtime(cp);
+        assert(lt != NULL);
+    }
+
+    printf("localtime: all positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「实参类型必须与原型匹配」：
+ * localtime 的参数类型为 const time_t *，传入 int 不兼容，
+ * gcc -std=c99 应报错（incompatible type / 参数类型不匹配）。 */
+void bad_arg_type(void)
+{
+    int x = 0;
+    struct tm *p = localtime(x);   /* 错误：应为 const time_t * */
+    (void)p;
+}
+
+/* 违反约束「实参类型必须与原型匹配」：
+ * 传入 struct tm * 而非 const time_t *，类型不兼容，应报错。 */
+void bad_arg_type2(void)
+{
+    struct tm t;
+    struct tm *p = localtime(&t);  /* 错误：&t 是 struct tm *，不是 time_t * */
+    (void)p;
+}
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * 原型只接受 1 个参数，传 2 个应报错。 */
+void bad_arg_count(void)
+{
+    time_t t = 0;
+    struct tm *p = localtime(&t, &t);  /* 错误：参数过多 */
+    (void)p;
+}
+
+/* 违反约束「函数调用实参个数必须与原型一致」：
+ * 原型要求 1 个参数，传 0 个应报错。 */
+void bad_arg_count2(void)
+{
+    struct tm *p = localtime();  /* 错误：参数过少 */
+    (void)p;
+}
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * localtime 返回 struct tm *，其解引用 *localtime(...) 是左值，
+ * 但函数调用结果本身不是左值，不能对其赋值。 */
+void bad_assign_call_result(void)
+{
+    time_t t = 0;
+    localtime(&t) = (struct tm *)0;  /* 错误：函数调用结果不是左值 */
+}
+
+/* 违反约束「赋值目标必须是可修改左值」：
+ * 对函数返回指针的解引用成员赋值是允许的（左值），
+ * 但对返回指针本身赋值不允许。 */
+void bad_assign_pointer(void)
+{
+    time_t t = 0;
+    localtime(&t) = NULL;  /* 错误：函数调用结果不是左值 */
+}
+
+#endif /* 负向测试结束 */

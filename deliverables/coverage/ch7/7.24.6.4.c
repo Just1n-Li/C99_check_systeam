@@ -1,0 +1,229 @@
+/*
+ * 测试条款：C99 7.24.6.4 Restartable multibyte/wide string conversion functions
+ *   - mbrtowc / wcrtomb / mbsrtowcs / wcsrtombs
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应被编译器拒绝（编译报错），
+ *             统一放在 #if 0 ... #endif 中，保证本文件仍可编译运行。
+ *
+ * 覆盖点：
+ *   [1] 额外参数 ps（指向 mbstate_t 的指针）；ps 为 NULL 时使用内部 mbstate_t；
+ *       内部对象在程序启动时初始化为初始转换状态；库函数不会以 NULL 调用这些函数。
+ *   [2] src 为 pointer-to-pointer 类型；当 dst 非 NULL 时，*src 被更新以反映
+ *       本次调用已处理的源字节数。
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+#include <assert.h>
+#include <locale.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] ps 参数类型为 mbstate_t*，可指向一个完整描述转换状态的对象。
+ *     这里用一个显式的 mbstate_t 对象，并验证初始状态可用。 */
+static void test_explicit_state_object(void)
+{
+    mbstate_t st;
+    memset(&st, 0, sizeof st);          /* 初始转换状态 */
+
+    /* mbrtowc：把单字节 'A' 转成宽字符 */
+    wchar_t wc = 0;
+    const char *s = "A";
+    size_t r = mbrtowc(&wc, s, 1, &st);
+    assert(r == 1);                     /* 消耗 1 个字节 */
+    assert(wc == L'A');
+
+    /* 状态对象在转换后仍可继续使用（可重启） */
+    mbstate_t st2;
+    memset(&st2, 0, sizeof st2);
+    char buf[MB_CUR_MAX + 1];
+    size_t n = wcrtomb(buf, L'B', &st2);
+    assert(n == 1);
+    assert(buf[0] == 'B');
+}
+
+/* [1] ps 为 NULL 时，函数使用自己的内部 mbstate_t 对象。
+ *     该内部对象在程序启动时被初始化为初始转换状态。 */
+static void test_null_ps_uses_internal_state(void)
+{
+    /* 第一次调用：ps == NULL，内部状态处于初始转换状态 */
+    wchar_t wc = 0;
+    size_t r = mbrtowc(&wc, "Z", 1, NULL);
+    assert(r == 1);
+    assert(wc == L'Z');
+
+    /* wcrtomb 用 NULL 状态 */
+    char buf[MB_CUR_MAX + 1];
+    size_t n = wcrtomb(buf, L'Y', NULL);
+    assert(n == 1);
+    assert(buf[0] == 'Y');
+
+    /* mbsrtowcs 用 NULL 状态 */
+    const char *src = "hi";
+    const char *p = src;
+    wchar_t dst[8];
+    size_t m = mbsrtowcs(dst, &p, 8, NULL);
+    assert(m == 2);
+    assert(dst[0] == L'h' && dst[1] == L'i');
+    assert(p == NULL);                  /* 转换到终止空字符后 *src 置 NULL */
+
+    /* wcsrtombs 用 NULL 状态 */
+    const wchar_t *wsrc = L"ok";
+    const wchar_t *wp = wsrc;
+    char cbuf[8];
+    size_t k = wcsrtombs(cbuf, &wp, sizeof cbuf, NULL);
+    assert(k == 2);
+    assert(cbuf[0] == 'o' && cbuf[1] == 'k');
+    assert(wp == NULL);
+}
+
+/* [2] src 为 pointer-to-pointer；当 dst 非 NULL 时，*src 被更新以反映
+ *     本次调用已处理的源字节数。 */
+static void test_src_pointer_updated(void)
+{
+    /* mbsrtowcs：dst 非 NULL，*src 应被更新 */
+    const char *src = "abc";
+    const char *p = src;
+    wchar_t dst[8];
+    size_t r = mbsrtowcs(dst, &p, 8, NULL);
+    assert(r == 3);
+    assert(dst[0] == L'a' && dst[1] == L'b' && dst[2] == L'c');
+    /* 转换到终止空字符，*src 被置为 NULL */
+    assert(p == NULL);
+
+    /* 部分转换：dst 空间不足，*src 指向尚未转换的剩余部分 */
+    const char *src2 = "wxyz";
+    const char *p2 = src2;
+    wchar_t dst2[2];
+    size_t r2 = mbsrtowcs(dst2, &p2, 2, NULL);
+    assert(r2 == 2);
+    assert(dst2[0] == L'w' && dst2[1] == L'x');
+    /* *src 被更新：指向已处理 2 个字节之后的位置 */
+    assert(p2 == src2 + 2);
+    assert(*p2 == 'y');
+
+    /* wcsrtombs：dst 非 NULL，*src 应被更新 */
+    const wchar_t *wsrc = L"pq";
+    const wchar_t *wp = wsrc;
+    char cbuf[8];
+    size_t k = wcsrtombs(cbuf, &wp, sizeof cbuf, NULL);
+    assert(k == 2);
+    assert(cbuf[0] == 'p' && cbuf[1] == 'q');
+    assert(wp == NULL);
+
+    /* 部分转换：dst 空间不足 */
+    const wchar_t *wsrc2 = L"rstu";
+    const wchar_t *wp2 = wsrc2;
+    char cbuf2[2];
+    size_t k2 = wcsrtombs(cbuf2, &wp2, 2, NULL);
+    assert(k2 == 2);
+    assert(cbuf2[0] == 'r' && cbuf2[1] == 's');
+    /* *src 被更新：指向尚未转换的宽字符 */
+    assert(wp2 == wsrc2 + 2);
+    assert(*wp2 == L't');
+}
+
+/* [2] 当 dst 为 NULL 时，函数只计算所需长度，不更新 *src（此处验证长度计算）。 */
+static void test_dst_null_length_query(void)
+{
+    const char *src = "hello";
+    const char *p = src;
+    size_t r = mbsrtowcs(NULL, &p, 0, NULL);
+    assert(r == 5);                     /* 不含终止空字符的长度 */
+
+    const wchar_t *wsrc = L"world";
+    const wchar_t *wp = wsrc;
+    size_t k = wcsrtombs(NULL, &wp, 0, NULL);
+    assert(k == 5);
+}
+
+/* [1] 可重启性：用同一个 mbstate_t 对象分多次调用，状态被保留。 */
+static void test_restartable_with_same_state(void)
+{
+    mbstate_t st;
+    memset(&st, 0, sizeof st);
+
+    wchar_t wc = 0;
+    /* 分两次转换两个字节 */
+    size_t r1 = mbrtowc(&wc, "A", 1, &st);
+    assert(r1 == 1 && wc == L'A');
+    size_t r2 = mbrtowc(&wc, "B", 1, &st);
+    assert(r2 == 1 && wc == L'B');
+}
+
+int main(void)
+{
+    /* 使用 C locale，保证单字节字符与宽字符一一对应，测试可移植。 */
+    setlocale(LC_ALL, "C");
+
+    test_explicit_state_object();
+    test_null_ps_uses_internal_state();
+    test_src_pointer_updated();
+    test_dst_null_length_query();
+    test_restartable_with_same_state();
+
+    printf("C99 7.24.6.4 positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「ps 参数类型为 pointer to mbstate_t」：
+ * 传入 int* 而非 mbstate_t*，gcc -std=c99 应报 incompatible pointer type 错误。 */
+void bad_ps_type(void)
+{
+    int x = 0;
+    wchar_t wc;
+    mbrtowc(&wc, "A", 1, &x);           /* 期望报错：int* 与 mbstate_t* 不兼容 */
+}
+
+/* 违反约束「src 参数类型为 pointer-to-pointer」：
+ * mbsrtowcs 的 src 必须是 const char**，传 const char* 应报错。 */
+void bad_src_not_pointer_to_pointer(void)
+{
+    wchar_t dst[8];
+    const char *s = "abc";
+    mbsrtowcs(dst, s, 8, NULL);         /* 期望报错：const char* 与 const char** 不兼容 */
+}
+
+/* 违反约束「wcsrtombs 的 src 参数类型为 pointer-to-pointer」：
+ * 传 const wchar_t* 而非 const wchar_t**，应报错。 */
+void bad_wcsrtombs_src(void)
+{
+    char dst[8];
+    const wchar_t *s = L"abc";
+    wcsrtombs(dst, s, sizeof dst, NULL); /* 期望报错：类型不兼容 */
+}
+
+/* 违反约束「wcrtomb 的第二个参数为 wchar_t」：
+ * 传 char* 而非 wchar_t，应报错。 */
+void bad_wcrtomb_wc_type(void)
+{
+    char buf[8];
+    char *p = buf;
+    wcrtomb(buf, p, NULL);              /* 期望报错：char* 不能转换为 wchar_t */
+}
+
+/* 违反约束「mbrtowc 的第三个参数为 size_t」：
+ * 传指针而非整数，应报错。 */
+void bad_mbrtowc_size_type(void)
+{
+    wchar_t wc;
+    const char *s = "A";
+    mbrtowc(&wc, s, s, NULL);           /* 期望报错：const char* 不能转换为 size_t */
+}
+
+/* 违反约束「函数返回 size_t」：
+ * 把返回值赋给不兼容的指针类型，应报错。 */
+void bad_return_type(void)
+{
+    wchar_t wc;
+    const char *p = mbrtowc(&wc, "A", 1, NULL); /* 期望报错：size_t 赋给 const char* */
+}
+
+#endif

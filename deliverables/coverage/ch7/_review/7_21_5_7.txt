@@ -1,0 +1,142 @@
+=== ARTICLE 7.21.5.7 ===
+--- TEXT ---
+The strstr function
+Synopsis:
+[1] #include <string.h> char *strstr(const char *s1, const char *s2);
+Description:
+[2] The strstr function locates the first occurrence in the string pointed to by s1 of the sequence of characters (excluding the terminating null character) in the string pointed to by s2.
+Returns:
+[3] The strstr function returns a pointer to the located string, or a null pointer if the string is not found. If s2 points to a string with zero length, the function returns s1.
+--- CODE ---
+/*
+ * 测试 C99 7.21.5.7 —— strstr 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型声明：char *strstr(const char *s1, const char *s2);
+ *   [2] 语义：在 s1 中定位 s2 字符序列（不含终止空字符）的首次出现。
+ *   [3] 返回值：找到则返回指向该处的指针；未找到返回空指针；
+ *              若 s2 指向零长度字符串，则返回 s1。
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：返回类型为 char *，参数为两个 const char *。
+ *     通过函数指针赋值来静态验证签名（不匹配则编译报错）。 */
+static char *(*strstr_sig)(const char *, const char *) = strstr;
+
+int main(void)
+{
+    /* [1] 原型可用性：调用形式与标准一致 */
+    const char *hay = "hello world, hello C99";
+    const char *needle = "hello";
+
+    /* [2] 定位首次出现：应指向第一个 "hello" */
+    char *p = strstr(hay, needle);
+    assert(p != NULL);
+    assert(p == hay);                 /* 首次出现就在开头 */
+    assert(strncmp(p, "hello", 5) == 0);
+
+    /* [2] 定位中间位置的首次出现 */
+    const char *s1 = "abcabcabc";
+    char *q = strstr(s1, "bca");
+    assert(q != NULL);
+    assert(q == s1 + 1);              /* 第一个 "bca" 从索引 1 开始 */
+
+    /* [2] 只匹配完整序列，不匹配部分 */
+    char *r = strstr("abcdef", "xyz");
+    assert(r == NULL);                /* 未找到 */
+
+    /* [3] 未找到时返回空指针 */
+    assert(strstr("foobar", "baz") == NULL);
+
+    /* [3] s2 为零长度字符串时返回 s1 */
+    const char *empty = "";
+    char *e = strstr(hay, empty);
+    assert(e == hay);                 /* 必须返回 s1 本身 */
+
+    /* [3] 零长度 s2 对空 s1 也返回 s1 */
+    const char *empty_s1 = "";
+    char *e2 = strstr(empty_s1, empty);
+    assert(e2 == empty_s1);
+
+    /* [2][3] s2 等于整个 s1 时返回 s1 */
+    char *full = strstr("exact", "exact");
+    assert(full != NULL);
+    assert(strcmp(full, "exact") == 0);
+
+    /* [2] 终止空字符不参与匹配：s2 含 '\0' 之外的内容 */
+    char *tail = strstr("abc", "c");
+    assert(tail != NULL && *tail == 'c' && tail[1] == '\0');
+
+    /* [1] 通过函数指针调用，验证签名一致 */
+    char *via_ptr = strstr_sig("pointer call", "call");
+    assert(via_ptr != NULL && strcmp(via_ptr, "call") == 0);
+
+    /* [2] 返回的指针可用于修改（s1 为可写数组时） */
+    char buf[] = "one two one";
+    char *m = strstr(buf, "one");
+    assert(m == buf);
+    m[0] = 'O';                       /* 修改定位到的字符 */
+    assert(strcmp(buf, "One two one") == 0);
+
+    printf("All positive tests for C99 7.21.5.7 strstr passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「strstr 的参数类型为 const char *」：
+ * 传入 int 实参，gcc -std=c99 应报 incompatible type / 参数类型不匹配错误。 */
+void bad_arg_type(void)
+{
+    int n = 42;
+    char *p = strstr(n, "x");   /* 错误：第一个实参不是指针 */
+    (void)p;
+}
+
+/* 违反约束「strstr 需要两个参数」：
+ * 只传一个实参，gcc -std=c99 应报 too few arguments 错误。 */
+void bad_too_few_args(void)
+{
+    char *p = strstr("abc");    /* 错误：缺少第二个实参 */
+    (void)p;
+}
+
+/* 违反约束「strstr 需要两个参数」：
+ * 传三个实参，gcc -std=c99 应报 too many arguments 错误。 */
+void bad_too_many_args(void)
+{
+    char *p = strstr("abc", "b", "c");  /* 错误：实参过多 */
+    (void)p;
+}
+
+/* 违反约束「strstr 的返回类型为 char *」：
+ * 将返回值赋给不兼容的指针类型（如 int *），
+ * gcc -std=c99 应报 incompatible pointer type 警告/错误。 */
+void bad_return_type(void)
+{
+    int *ip = strstr("abc", "b");   /* 错误：char * 赋给 int * */
+    (void)ip;
+}
+
+/* 违反约束「strstr 声明于 <string.h>」：
+ * 若未包含 <string.h> 且无自身声明，则调用隐式声明，
+ * 在 C99 下 gcc -std=c99 -Werror 应报 implicit declaration 错误。 */
+void bad_no_prototype(void)
+{
+    /* 假设此处未包含 <string.h>，直接调用 strstr */
+    char *p = strstr("abc", "b");   /* 错误：隐式函数声明（C99 禁止） */
+    (void)p;
+}
+
+#endif /* 负向测试结束 */

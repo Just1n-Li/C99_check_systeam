@@ -1,0 +1,224 @@
+/*
+ * 测试条款：C99 7.19.6.11  The vscanf function
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             因此本文件整体仍可正常编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int vscanf(const char * restrict format, va_list arg);
+ *   [2] 语义：等价于 scanf，可变实参列表由 arg 取代；arg 须由 va_start
+ *            初始化（可能经过若干 va_arg 调用）；vscanf 不调用 va_end。
+ *   [3] 返回值：任何转换之前发生输入失败返回 EOF；否则返回已赋值的输入
+ *            项数，可能少于提供的项数，甚至为 0（早期匹配失败）。
+ */
+
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <assert.h>
+
+/* ============================================================
+ * 辅助函数：把 vscanf 包在带可变参数的函数里，
+ * 演示 va_start / va_arg / va_end 的正确用法（[2]）。
+ * ============================================================ */
+
+/* [2] 用 va_start 初始化 arg，然后调用 vscanf。
+ *     vscanf 本身不调用 va_end，由调用者负责。 */
+static int call_vscanf(const char *fmt, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, fmt);          /* [2] arg 由 va_start 初始化 */
+    r = vscanf(fmt, ap);        /* [1][2] 调用 vscanf */
+    va_end(ap);                 /* [2] vscanf 不调用 va_end，调用者调用 */
+    return r;
+}
+
+/* [2] 演示「可能经过若干 va_arg 调用」后再把 arg 交给 vscanf。
+ *     这里先取一个 int 参数，再把剩余的 va_list 传给 vscanf。 */
+static int call_vscanf_after_va_arg(int first, const char *fmt, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, fmt);
+    /* 先消费一个参数（模拟 va_arg 调用） */
+    {
+        int consumed = va_arg(ap, int);
+        /* 把消费到的值通过 first 校验，避免未使用警告 */
+        if (consumed != first) {
+            va_end(ap);
+            return -1000;
+        }
+    }
+    r = vscanf(fmt, ap);        /* [2] 经过 va_arg 后的 arg 仍可传给 vscanf */
+    va_end(ap);
+    return r;
+}
+
+int main(void)
+{
+    /* ==========================================================
+     * 正向测试：以下代码应能编译并运行通过
+     * ========================================================== */
+
+    /* [1] 原型检查：取函数指针，验证签名与 restrict 限定兼容。
+     *     vscanf 的返回类型为 int，参数为 (const char * restrict, va_list)。 */
+    {
+        int (*fp)(const char * restrict, va_list) = vscanf;
+        assert(fp != NULL);
+    }
+
+    /* [3] 输入失败（EOF）测试：
+     *     用一个空输入流（/dev/null 或空字符串流）触发输入失败，
+     *     在任何转换之前发生，应返回 EOF。
+     *     这里用 tmpfile() 创建一个空文件作为 stdin 重定向源。 */
+    {
+        FILE *empty = tmpfile();
+        assert(empty != NULL);
+        /* 空文件：立即到达文件末尾，任何转换前输入失败 */
+        {
+            FILE *saved = stdin;
+            int r;
+            stdin = empty;
+            r = call_vscanf("%d", &(int){0});
+            stdin = saved;
+            assert(r == EOF);   /* [3] 输入失败返回 EOF */
+        }
+        fclose(empty);
+    }
+
+    /* [3] 正常赋值测试：从字符串流读取，返回已赋值的项数。
+     *     使用 fmemopen（POSIX）不可移植，改用 tmpfile 写入内容后回绕。 */
+    {
+        FILE *f = tmpfile();
+        assert(f != NULL);
+        fputs("42 3.5 hello", f);
+        rewind(f);
+        {
+            FILE *saved = stdin;
+            int i = 0;
+            double d = 0.0;
+            char s[16] = {0};
+            int r;
+            stdin = f;
+            /* 三个转换说明符，应赋值 3 项 */
+            r = call_vscanf("%d %lf %15s", &i, &d, s);
+            stdin = saved;
+            assert(r == 3);             /* [3] 返回已赋值项数 */
+            assert(i == 42);
+            assert(d == 3.5);
+            assert(strcmp(s, "hello") == 0);
+        }
+        fclose(f);
+    }
+
+    /* [3] 早期匹配失败：返回 0（已赋值项数少于提供项数，甚至为 0）。 */
+    {
+        FILE *f = tmpfile();
+        assert(f != NULL);
+        fputs("abc", f);        /* 对 %d 而言不是合法整数开头 */
+        rewind(f);
+        {
+            FILE *saved = stdin;
+            int i = -1;
+            int r;
+            stdin = f;
+            r = call_vscanf("%d", &i);
+            stdin = saved;
+            assert(r == 0);     /* [3] 早期匹配失败返回 0 */
+            assert(i == -1);    /* 未赋值，i 保持原值 */
+        }
+        fclose(f);
+    }
+
+    /* [3] 部分匹配：提供的项数多于成功赋值的项数，返回值可少于提供项数。 */
+    {
+        FILE *f = tmpfile();
+        assert(f != NULL);
+        fputs("7 xyz", f);      /* 第一个 %d 成功，第二个 %d 失败 */
+        rewind(f);
+        {
+            FILE *saved = stdin;
+            int a = 0, b = -1;
+            int r;
+            stdin = f;
+            r = call_vscanf("%d %d", &a, &b);
+            stdin = saved;
+            assert(r == 1);     /* [3] 只赋值 1 项，少于提供的 2 项 */
+            assert(a == 7);
+            assert(b == -1);
+        }
+        fclose(f);
+    }
+
+    /* [2] 经过 va_arg 调用后再把 arg 传给 vscanf 的路径。 */
+    {
+        FILE *f = tmpfile();
+        assert(f != NULL);
+        fputs("99", f);
+        rewind(f);
+        {
+            FILE *saved = stdin;
+            int out = 0;
+            int r;
+            stdin = f;
+            /* first=123 会被 va_arg 消费，随后 vscanf 读取 99 */
+            r = call_vscanf_after_va_arg(123, "%d", 123, &out);
+            stdin = saved;
+            assert(r == 1);
+            assert(out == 99);
+        }
+        fclose(f);
+    }
+
+    printf("正向测试全部通过。\n");
+
+    /* ==========================================================
+     * 负向测试：以下代码违反 C99 约束，应编译报错
+     * ========================================================== */
+#if 0
+
+    /* 违反约束 [1]：vscanf 的第一个参数类型为 const char * restrict。
+     * 传入 int 类型实参，违反参数类型约束，gcc -std=c99 应报错
+     * （incompatible type for argument 1 / passing argument 1 ...）。 */
+    {
+        va_list ap;
+        int r = vscanf(123, ap);   /* 错误：第一个实参应为 const char * */
+        (void)r;
+    }
+
+    /* 违反约束 [1]：vscanf 的第二个参数类型为 va_list。
+     * 传入 int，违反参数类型约束，应报错。 */
+    {
+        int r = vscanf("%d", 5);   /* 错误：第二个实参应为 va_list */
+        (void)r;
+    }
+
+    /* 违反约束 [1]：vscanf 需要两个实参，只给一个，应报错
+     * （too few arguments to function 'vscanf'）。 */
+    {
+        int r = vscanf("%d");      /* 错误：缺少 va_list 实参 */
+        (void)r;
+    }
+
+    /* 违反约束 [1]：vscanf 只接受两个实参，多给一个，应报错
+     * （too many arguments to function 'vscanf'）。 */
+    {
+        va_list ap;
+        int r = vscanf("%d", ap, 0);  /* 错误：实参过多 */
+        (void)r;
+    }
+
+    /* 违反约束 [1]：vscanf 返回 int，不能作为函数指针赋给不兼容类型。
+     * 将返回类型不同的函数指针赋给 vscanf 的地址，应报错。 */
+    {
+        void (*fp)(const char * restrict, va_list) = vscanf; /* 错误：返回类型不兼容 */
+        (void)fp;
+    }
+
+#endif
+
+    return 0;
+}

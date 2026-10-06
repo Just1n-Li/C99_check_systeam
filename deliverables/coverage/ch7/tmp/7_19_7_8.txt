@@ -1,0 +1,201 @@
+=== TEXT ===
+The putc function
+Synopsis:
+[1] #include <stdio.h> int putc(int c, FILE *stream);
+Description:
+[2] The putc function is equivalent to fputc, except that if it is implemented as a macro, it may evaluate stream more than once, so that argument should never be an expression with side effects.
+Returns:
+[3] The putc function returns the character written. If a write error occurs, the error indicator for the stream is set and putc returns EOF.
+=== CODE ===
+/*
+ * 测试 C99 7.19.7.8 —— putc 函数
+ *
+ * 预期行为：
+ *   正向测试：以下代码应能编译并运行通过（assert 全部成立）。
+ *   负向测试：违反约束的片段应导致编译报错（统一放在 #if 0 中，
+ *             保证本文件整体仍可编译运行）。
+ *
+ * 覆盖段落：
+ *   [1] 原型：int putc(int c, FILE *stream);
+ *   [2] 语义：等价于 fputc；若实现为宏，可能多次求值 stream，
+ *            故 stream 实参不应带副作用。
+ *   [3] 返回值：返回写入的字符；写错误时设置流的错误指示器并返回 EOF。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+#include <errno.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 原型检查：putc 接受 (int, FILE*) 并返回 int。
+ *     通过取函数指针来静态验证原型签名。 */
+static int (*putc_proto_check)(int, FILE *) = putc;
+
+int main(void)
+{
+    /* [1] 原型：调用形式为 putc(int, FILE*) */
+    {
+        FILE *fp = tmpfile();
+        assert(fp != NULL);
+
+        int r = putc('A', fp);          /* 正常调用 */
+        assert(r == 'A');               /* [3] 返回写入的字符 */
+
+        /* [3] 返回写入的字符：再写一个，验证返回值等于实参字符 */
+        r = putc('B', fp);
+        assert(r == 'B');
+
+        /* 回读验证确实写入了 "AB" */
+        fflush(fp);
+        rewind(fp);
+        char buf[8] = {0};
+        size_t n = fread(buf, 1, sizeof buf, fp);
+        assert(n == 2);
+        assert(buf[0] == 'A' && buf[1] == 'B');
+
+        fclose(fp);
+    }
+
+    /* [2] 语义：putc 等价于 fputc。
+     *     对两个独立文件分别用 putc 与 fputc 写入相同数据，
+     *     比较结果应完全一致。 */
+    {
+        FILE *f1 = tmpfile();
+        FILE *f2 = tmpfile();
+        assert(f1 != NULL && f2 != NULL);
+
+        const char *s = "Hello, putc!";
+        for (size_t i = 0; i < strlen(s); i++) {
+            int a = putc((unsigned char)s[i], f1);
+            int b = fputc((unsigned char)s[i], f2);
+            assert(a == b);             /* 等价性：返回值相同 */
+        }
+
+        fflush(f1);
+        fflush(f2);
+        rewind(f1);
+        rewind(f2);
+
+        char b1[64] = {0}, b2[64] = {0};
+        size_t n1 = fread(b1, 1, sizeof b1 - 1, f1);
+        size_t n2 = fread(b2, 1, sizeof b2 - 1, f2);
+        assert(n1 == n2);
+        assert(memcmp(b1, b2, n1) == 0); /* 写入内容相同 */
+
+        fclose(f1);
+        fclose(f2);
+    }
+
+    /* [2] 语义：stream 实参不应带副作用（若实现为宏可能多次求值）。
+     *     这里用无副作用的简单左值，符合条款建议。 */
+    {
+        FILE *fp = tmpfile();
+        assert(fp != NULL);
+        int r = putc('Z', fp);
+        assert(r == 'Z');
+        fclose(fp);
+    }
+
+    /* [3] 返回值：写错误时设置错误指示器并返回 EOF。
+     *     对只读流（"r" 模式）写入会触发写错误。 */
+    {
+        FILE *fp = tmpfile();
+        assert(fp != NULL);
+        /* 先写入一些内容，再以只读方式重新打开同一文件不可行（tmpfile 无名），
+         * 改用 fopen 一个只读文件来触发写错误。 */
+        fclose(fp);
+
+        /* 创建一个只读文件 */
+        const char *path = "putc_ro_test.tmp";
+        FILE *w = fopen(path, "w");
+        assert(w != NULL);
+        fputs("data", w);
+        fclose(w);
+
+        FILE *ro = fopen(path, "r");
+        assert(ro != NULL);
+
+        /* 清除错误状态 */
+        clearerr(ro);
+        int r = putc('X', ro);          /* 对只读流写入 -> 写错误 */
+        assert(r == EOF);               /* [3] 返回 EOF */
+        assert(ferror(ro) != 0);        /* [3] 错误指示器被设置 */
+
+        fclose(ro);
+        remove(path);
+    }
+
+    /* [3] 返回值：正常写入时返回写入的字符（非 EOF） */
+    {
+        FILE *fp = tmpfile();
+        assert(fp != NULL);
+        for (int c = 0; c < 256; c++) {
+            int r = putc(c, fp);
+            assert(r == c);             /* 返回写入的字符 */
+        }
+        fclose(fp);
+    }
+
+    /* 使用函数指针调用，确认 putc 可作为函数使用（[1] 原型） */
+    {
+        FILE *fp = tmpfile();
+        assert(fp != NULL);
+        int r = putc_proto_check('Q', fp);
+        assert(r == 'Q');
+        fclose(fp);
+    }
+
+    printf("All positive tests for C99 7.19.7.8 (putc) passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* 违反约束「[1] 原型：int putc(int c, FILE *stream)」：
+ * 参数个数错误 —— 只传一个实参，gcc -std=c99 应报错
+ *   error: too few arguments to function 'putc' */
+#include <stdio.h>
+void bad_argc_1(void) {
+    FILE *fp = tmpfile();
+    putc('A');                 /* 缺少 stream 实参 */
+}
+
+/* 违反约束「[1] 原型：int putc(int c, FILE *stream)」：
+ * 参数个数错误 —— 传三个实参，应报错
+ *   error: too many arguments to function 'putc' */
+void bad_argc_2(void) {
+    FILE *fp = tmpfile();
+    putc('A', fp, 0);          /* 多余实参 */
+}
+
+/* 违反约束「[1] 原型：第二个参数类型为 FILE *」：
+ * 传入不兼容的指针类型（int*），应报错
+ *   error: incompatible type for argument 2 of 'putc' */
+void bad_argtype(void) {
+    int x = 0;
+    putc('A', &x);             /* &x 是 int*，不是 FILE* */
+}
+
+/* 违反约束「[1] 原型：第一个参数类型为 int」：
+ * 传入结构体（非算术类型，无法转换为 int），应报错
+ *   error: incompatible type for argument 1 of 'putc' */
+struct S { int a; };
+void bad_arg1_struct(void) {
+    FILE *fp = tmpfile();
+    struct S s;
+    putc(s, fp);               /* 结构体不能作为 int 实参 */
+}
+
+/* 违反约束「[1] 原型：返回类型为 int」：
+ * 把返回值赋给不兼容类型（结构体），应报错
+ *   error: incompatible types when assigning to type 'struct S' from type 'int' */
+void bad_ret_assign(void) {
+    FILE *fp = tmpfile();
+    struct S s;
+    s = putc('A', fp);         /* int 不能赋给结构体 */
+}
+
+#endif /* 负向测试结束 */

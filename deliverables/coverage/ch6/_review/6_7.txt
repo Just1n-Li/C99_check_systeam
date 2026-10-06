@@ -1,0 +1,83 @@
+=== ARTICLE ===
+6.7
+=== TEXT ===
+Declarations
+Syntax:
+[1] declaration: declaration-specifiers init-declarator-list ; declaration-specifiers: storage-class-specifier declaration-specifiers type-specifier declaration-specifiers type-qualifier declaration-specifiers function-specifier declaration-specifiers init-declarator-list: init-declarator init-declarator-list , init-declarator init-declarator: declarator declarator = initializer
+Constraints:
+[2] A declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag, or the members of an enumeration.
+[3] If an identifier has no linkage, there shall be no more than one declaration of the identifier (in a declarator or type specifier) with the same scope and in the same name space, except for tags as specified in 6.7.2.3.
+[4] All declarations in the same scope that refer to the same object or function shall specify compatible types.
+Semantics:
+[5] A declaration specifies the interpretation and attributes of a set of identifiers. A definition of an identifier is a declaration for that identifier that: for an object, causes storage to be reserved for that object; for a function, includes the function body; for an enumeration constant or typedef name, is the (only) declaration of the identifier.
+[6] The declaration specifiers consist of a sequence of specifiers that indicate the linkage, storage duration, and part of the type of the entities that the declarators denote. The init- declarator-list is a comma-separated sequence of declarators, each of which may have additional type information, or an initializer, or both. The declarators contain the identifiers (if any) being declared.
+[7] If an identifier for an object is declared with no linkage, the type for the object shall be complete by the end of its declarator, or by the end of its init-declarator if it has an initializer; in the case of function parameters (including in prototypes), it is the adjusted type (see 6.7.5.3) that is required to be complete.
+Forward references: declarators (6.7.5), enumeration specifiers (6.7.2.2), initialization (6.7.8).
+Footnotes:
+101) Function definitions have a different syntax, described in 6.9.1.
+=== CODE ===
+/*
+ * 验证 C99 条款 6.7 (Declarations)
+ * 预期行为：正向测试应能编译并运行通过；负向测试应编译报错。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 语法：declaration-specifiers init-declarator-list ; */
+static const int a = 1, b = 2;
+
+/* [5] 语义：定义（预留存储空间、函数体、唯一声明） */
+int obj_def = 10; /* 对象定义：预留存储空间 */
+int func_def(void) { return 20; } /* 函数定义：包含函数体 */
+typedef int MyInt; /* typedef 定义：唯一声明 */
+enum { E_VAL = 30 }; /* 枚举常量定义：唯一声明 */
+
+/* [6] 语义：声明说明符指示链接、存储期、部分类型；init-declarator-list 是逗号分隔的序列 */
+extern int c, d; /* extern 指示链接，int 指示类型，c 和 d 为 declarator */
+
+/* [7] 语义：无链接的对象类型在声明器结束时必须是完整的 */
+struct Complete { int x; };
+struct Complete s1; /* 无链接，类型在声明器结束时已完整 */
+
+int main(void) {
+    /* [1] 验证语法组合 */
+    assert(a == 1 && b == 2);
+    
+    /* [5] 验证定义的语义 */
+    assert(obj_def == 10);
+    assert(func_def() == 20);
+    MyInt mi = 5;
+    assert(mi == 5);
+    assert(E_VAL == 30);
+    
+    /* [6] 验证声明说明符与初始化声明器列表 */
+    c = 100;
+    d = 200;
+    assert(c == 100 && d == 200);
+    
+    /* [7] 验证无链接完整类型 */
+    s1.x = 50;
+    assert(s1.x == 50);
+    
+    printf("6.7 Positive tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+
+/* [2] 约束：声明应声明至少一个声明器、标签或枚举成员。以下代码无声明器，应报错 */
+int;
+
+/* [3] 约束：无链接的标识符在同一作用域和命名空间中只能声明一次。以下代码重复声明无链接标识符，应报错 */
+int rep_x;
+int rep_x;
+
+/* [4] 约束：同一作用域内引用同一对象或函数的所有声明必须指定兼容类型。以下代码类型不兼容，应报错 */
+extern int rep_y;
+extern double rep_y;
+
+#endif

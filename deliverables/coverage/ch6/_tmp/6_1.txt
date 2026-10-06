@@ -1,0 +1,68 @@
+ARTICLE: 6.1
+
+TEXT:
+Notation
+[1] In the syntax notation used in this clause, syntactic categories (nonterminals) are indicated by italic type, and literal words and character set members (terminals) by bold type. A colon (:) following a nonterminal introduces its definition. Alternative definitions are listed on separate lines, except when prefaced by the words ''one of''. An optional symbol is indicated by the subscript ''opt'', so that { expression } indicates an optional expression enclosed in braces.
+[2] When syntactic categories are referred to in the main text, they are not italicized and words are separated by spaces instead of hyphens.
+[3] A summary of the language syntax is given in annex A.
+
+CODE:
+/*
+ * 验证 C99 6.1 Notation
+ * 预期行为：正向测试运行通过；负向测试无适用约束（本条款为标准文档记法说明）。
+ */
+
+#include <stdio.h>
+#include <assert.h>
+
+/* ========== 正向测试：以下代码应能编译并运行通过 ========== */
+
+/* [1] 语法记法中的可选符号 "opt"：
+   C 语法中存在大量可选成分，例如 if 语句的 else 部分是可选的 (else_statement_opt) */
+void test_optional_syntax(void) {
+    int x = 1;
+    if (x == 1) {
+        x = 2;
+    } /* else 部分被省略，体现 opt */
+    assert(x == 2);
+}
+
+/* [1] 语法记法中的 "one of"：
+   许多语法成分由 "one of" 列出，例如类型限定符是 const, restrict, volatile 之一 */
+void test_one_of(void) {
+    const int a = 10;
+    volatile int b = 20;
+    assert(a + b == 30);
+}
+
+/* [2] 正文引用语法类别时用空格分隔：
+   例如 "long int" 在正文中作为一个语法类别引用，而不是 "long-int" */
+void test_space_separated_words(void) {
+    unsigned long int val = 123456;
+    assert(val == 123456);
+}
+
+/* [3] 语言语法摘要见附录 A：
+   编写符合附录 A 语法的代码，例如使用数组指示器初始化语法 */
+void test_annex_a_syntax(void) {
+    int arr[3] = { [0] = 1, [2] = 3 }; /* 指示器语法，附录 A.6.2 */
+    assert(arr[0] == 1 && arr[1] == 0 && arr[2] == 3);
+}
+
+int main(void) {
+    test_optional_syntax();
+    test_one_of();
+    test_space_separated_words();
+    test_annex_a_syntax();
+    printf("C99 6.1 Notation tests passed.\n");
+    return 0;
+}
+
+/* ========== 负向测试：以下代码违反 C99 约束，应编译报错 ========== */
+#if 0
+/* 
+ * 本条款（6.1 Notation）描述的是 ISO/IEC 9899:1999 标准文档中使用的语法记法规则，
+ * 并未定义任何针对 C 语言程序的约束条件。
+ * 因此，本条款无适用的负向测试。
+ */
+#endif
